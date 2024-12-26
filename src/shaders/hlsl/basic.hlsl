@@ -25,6 +25,9 @@ struct fs_output {
 
 fs_output fs_main(vs_output input) {
     fs_output output;
-    output.color = input.color;
+    output.color.r = input.color.r;
+    output.color.g = input.color.g;
+    output.color.b = input.color.b;
+    output.color.a = input.color.a;
     return output;
 }

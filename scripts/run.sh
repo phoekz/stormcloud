@@ -8,5 +8,5 @@ echo "Root location: $ROOT_DIR"
 pushd $ROOT_DIR
 cmake -S . -B build
 cmake --build build
-$BIN_DIR/stormcloud.exe temp/09KC3164.pak2
+$BIN_DIR/stormcloud.exe temp/09KC3165.pak2
 popd
