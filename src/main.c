@@ -23,10 +23,12 @@ static uint64_t u64_min(uint64_t a, uint64_t b) {
     if (!(expr)) {      \
         abort();        \
     }
-#define SC_SDL_ASSERT(expr)                       \
-    if (!(expr)) {                                \
-        SDL_Log("SDL error: %s", SDL_GetError()); \
-        abort();                                  \
+#define SC_LOG_INFO(fmt, ...) SDL_Log(fmt, ##__VA_ARGS__)
+#define SC_LOG_ERROR(fmt, ...) SDL_LogError(SDL_LOG_CATEGORY_ERROR, fmt, ##__VA_ARGS__)
+#define SC_SDL_ASSERT(expr)                            \
+    if (!(expr)) {                                     \
+        SC_LOG_ERROR("SDL error: %s", SDL_GetError()); \
+        abort();                                       \
     }
 
 //
@@ -155,7 +157,7 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     // Timing.
     const uint64_t end_time_ns = SDL_GetTicksNS();
     const uint64_t elapsed_time_ns = end_time_ns - begin_time_ns;
-    SDL_Log("Loaded %d points in %" PRIu64 " ms", hdr.point_count, elapsed_time_ns / 1000000);
+    SC_LOG_INFO("Loaded %d points in %" PRIu64 " ms", hdr.point_count, elapsed_time_ns / 1000000);
 }
 
 static void sc_data_free(ScData* sc_data) {
@@ -188,33 +190,33 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     // SDL.
     SDL_SetAppMetadata("stormcloud", "1.0.0", "com.phoekz.stormcloud");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
     // Window & device.
     app->window = SDL_CreateWindow("stormcloud", 1280, 800, 0);
     if (app->window == NULL) {
-        SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     app->device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, false, "direct3d12");
     if (app->device == NULL) {
-        SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_CreateGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     if (!SDL_ClaimWindowForGPUDevice(app->device, app->window)) {
-        SDL_Log("SDL_ClaimWindowForGPUDevice failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_ClaimWindowForGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     const SDL_GPUPresentMode present_mode = SDL_GPU_PRESENTMODE_VSYNC;
     const SDL_GPUSwapchainComposition composition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR;
     if (!SDL_WindowSupportsGPUPresentMode(app->device, app->window, present_mode)) {
-        SDL_Log("SDL_WindowSupportsGPUPresentMode failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_WindowSupportsGPUPresentMode failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     if (!SDL_SetGPUSwapchainParameters(app->device, app->window, composition, present_mode)) {
-        SDL_Log("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -377,14 +379,14 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Command buffer.
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(app->device);
     if (cmd == NULL) {
-        SDL_Log("SDL_AcquireGPUCommandBuffer failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_AcquireGPUCommandBuffer failed: %s", SDL_GetError());
         return -1;
     }
 
     // Swapchain.
     SDL_GPUTexture* swapchain = NULL;
     if (!SDL_AcquireGPUSwapchainTexture(cmd, app->window, &swapchain, NULL, NULL)) {
-        SDL_Log("SDL_AcquireGPUSwapchainTexture failed: %s", SDL_GetError());
+        SC_LOG_ERROR("SDL_AcquireGPUSwapchainTexture failed: %s", SDL_GetError());
         return -1;
     }
 
