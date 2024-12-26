@@ -52,4 +52,6 @@ Mkfile.old
 dkms.conf
 
 # Stormcloud
+/.vscode/
 /build/
+/temp/
