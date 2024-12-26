@@ -23,6 +23,11 @@ static uint64_t u64_min(uint64_t a, uint64_t b) {
     if (!(expr)) {      \
         abort();        \
     }
+#define SC_SDL_ASSERT(expr)                       \
+    if (!(expr)) {                                \
+        SDL_Log("SDL error: %s", SDL_GetError()); \
+        abort();                                  \
+    }
 
 //
 // Stormcloud data.
@@ -166,6 +171,10 @@ typedef struct ScApp {
     ScData data;
     SDL_Window* window;
     SDL_GPUDevice* device;
+    SDL_GPUShader* vertex_shader;
+    SDL_GPUShader* fragment_shader;
+    SDL_GPUGraphicsPipeline* pipeline;
+    SDL_GPUBuffer* vertex_buffer;
 } ScApp;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
@@ -189,7 +198,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    app->device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, false, NULL);
+    app->device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, false, "direct3d12");
     if (app->device == NULL) {
         SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -208,6 +217,139 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         SDL_Log("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+
+    // Shaders.
+    size_t vertex_code_size;
+    size_t fragment_code_size;
+    void* vertex_code = SDL_LoadFile("src/shaders/dxil/basic.vert", &vertex_code_size);
+    void* fragment_code = SDL_LoadFile("src/shaders/dxil/basic.frag", &fragment_code_size);
+    SC_ASSERT(vertex_code != NULL && vertex_code_size > 0);
+    SC_ASSERT(fragment_code != NULL && fragment_code_size > 0);
+    app->vertex_shader = SDL_CreateGPUShader(
+        app->device,
+        &(SDL_GPUShaderCreateInfo) {
+            .code = vertex_code,
+            .code_size = vertex_code_size,
+            .entrypoint = "vs_main",
+            .format = SDL_GPU_SHADERFORMAT_DXIL,
+            .stage = SDL_GPU_SHADERSTAGE_VERTEX,
+        }
+    );
+    app->fragment_shader = SDL_CreateGPUShader(
+        app->device,
+        &(SDL_GPUShaderCreateInfo) {
+            .code = fragment_code,
+            .code_size = fragment_code_size,
+            .entrypoint = "fs_main",
+            .format = SDL_GPU_SHADERFORMAT_DXIL,
+            .stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+        }
+    );
+    SC_SDL_ASSERT(app->vertex_shader != NULL);
+    SC_SDL_ASSERT(app->fragment_shader != NULL);
+    SDL_free(vertex_code);
+    SDL_free(fragment_code);
+
+    // Pipeline.
+    app->pipeline = SDL_CreateGPUGraphicsPipeline(
+        app->device,
+        &(SDL_GPUGraphicsPipelineCreateInfo) {
+            .vertex_shader = app->vertex_shader,
+            .fragment_shader = app->fragment_shader,
+            .vertex_input_state =
+                (SDL_GPUVertexInputState) {
+                    .vertex_buffer_descriptions = (SDL_GPUVertexBufferDescription[]) {{
+                        .slot = 0,
+                        .pitch = 3 * sizeof(float),
+                        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+                        .instance_step_rate = 0,
+                    }},
+                    .num_vertex_buffers = 1,
+                    .vertex_attributes = (SDL_GPUVertexAttribute[]) {{
+                        .location = 0,
+                        .buffer_slot = 0,
+                        .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+                        .offset = 0,
+                    }},
+                    .num_vertex_attributes = 1,
+                },
+            .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .rasterizer_state =
+                (SDL_GPURasterizerState) {
+                    .fill_mode = SDL_GPU_FILLMODE_FILL,
+                    .cull_mode = SDL_GPU_CULLMODE_BACK,
+                    .front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                    .depth_bias_constant_factor = 0.0f,
+                    .depth_bias_clamp = 0.0f,
+                    .depth_bias_slope_factor = 0.0f,
+                    .enable_depth_bias = false,
+                    .enable_depth_clip = false,
+                },
+            .multisample_state =
+                (SDL_GPUMultisampleState) {
+                    .sample_count = 1,
+                    .sample_mask = 0,
+                    .enable_mask = 0,
+                },
+            .depth_stencil_state = (SDL_GPUDepthStencilState) {0},
+            .target_info =
+                (SDL_GPUGraphicsPipelineTargetInfo) {
+                    .color_target_descriptions = (SDL_GPUColorTargetDescription[]) {{
+                        .format = SDL_GetGPUSwapchainTextureFormat(app->device, app->window),
+                        .blend_state = (SDL_GPUColorTargetBlendState) {0},
+                    }},
+                    .num_color_targets = 1,
+                    .depth_stencil_format = SDL_GPU_TEXTUREFORMAT_INVALID,
+                    .has_depth_stencil_target = false,
+                },
+        }
+    );
+    SC_SDL_ASSERT(app->pipeline != NULL);
+
+    // Vertex buffer.
+    app->vertex_buffer = SDL_CreateGPUBuffer(
+        app->device,
+        &(SDL_GPUBufferCreateInfo) {
+            .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+            .size = 3 * 3 * sizeof(float),
+        }
+    );
+    SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
+        app->device,
+        &(SDL_GPUTransferBufferCreateInfo) {
+            .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+            .size = 3 * 3 * sizeof(float),
+        }
+    );
+    float* vertex_buffer_positions = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
+    vertex_buffer_positions[0] = -1.0f;
+    vertex_buffer_positions[1] = -1.0f;
+    vertex_buffer_positions[2] = 0.0f;
+    vertex_buffer_positions[3] = 1.0f;
+    vertex_buffer_positions[4] = -1.0f;
+    vertex_buffer_positions[5] = 0.0f;
+    vertex_buffer_positions[6] = 0.0f;
+    vertex_buffer_positions[7] = 1.0f;
+    vertex_buffer_positions[8] = 0.0f;
+    SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
+    SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
+    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
+    SDL_UploadToGPUBuffer(
+        copy_pass,
+        &(SDL_GPUTransferBufferLocation) {
+            .transfer_buffer = transfer_buffer,
+            .offset = 0,
+        },
+        &(SDL_GPUBufferRegion) {
+            .buffer = app->vertex_buffer,
+            .offset = 0,
+            .size = 3 * 3 * sizeof(float),
+        },
+        false
+    );
+    SDL_EndGPUCopyPass(copy_pass);
+    SDL_SubmitGPUCommandBuffer(upload_cmd);
+    SDL_ReleaseGPUTransferBuffer(app->device, transfer_buffer);
 
     // Load.
     sc_data_load(&app->data, argv[1]);
@@ -250,11 +392,22 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     if (swapchain != NULL) {
         SDL_GPUColorTargetInfo color_target_info = {0};
         color_target_info.texture = swapchain;
-        color_target_info.clear_color = (SDL_FColor) {1.0f, 0.5f, 0.0f, 1.0f};
+        color_target_info.clear_color = (SDL_FColor) {0.1f, 0.1f, 0.1f, 1.0f};
         color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
         color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
         SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmd, &color_target_info, 1, NULL);
+        SDL_BindGPUGraphicsPipeline(render_pass, app->pipeline);
+        SDL_BindGPUVertexBuffers(
+            render_pass,
+            0,
+            &(SDL_GPUBufferBinding) {
+                .buffer = app->vertex_buffer,
+                .offset = 0,
+            },
+            1
+        );
+        SDL_DrawGPUPrimitives(render_pass, 3, 1, 0, 0);
         SDL_EndGPURenderPass(render_pass);
     }
 
@@ -269,6 +422,10 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     ScApp* app = (ScApp*)appstate;
 
     // Destroy.
+    SDL_ReleaseGPUBuffer(app->device, app->vertex_buffer);
+    SDL_ReleaseGPUGraphicsPipeline(app->device, app->pipeline);
+    SDL_ReleaseGPUShader(app->device, app->vertex_shader);
+    SDL_ReleaseGPUShader(app->device, app->fragment_shader);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);
     SDL_DestroyGPUDevice(app->device);
