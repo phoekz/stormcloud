@@ -177,7 +177,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     *appstate = app;
 
     // SDL.
-    SDL_SetAppMetadata("Stormcloud", "1.0.0", "com.phoekz.stormcloud");
+    SDL_SetAppMetadata("stormcloud", "1.0.0", "com.phoekz.stormcloud");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -248,14 +248,14 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // Render pass.
     if (swapchain != NULL) {
-        SDL_GPUColorTargetInfo colorTargetInfo = {0};
-        colorTargetInfo.texture = swapchain;
-        colorTargetInfo.clear_color = (SDL_FColor) {1.0f, 0.5f, 0.0f, 1.0f};
-        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPUColorTargetInfo color_target_info = {0};
+        color_target_info.texture = swapchain;
+        color_target_info.clear_color = (SDL_FColor) {1.0f, 0.5f, 0.0f, 1.0f};
+        color_target_info.load_op = SDL_GPU_LOADOP_CLEAR;
+        color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
-        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmd, &colorTargetInfo, 1, NULL);
-        SDL_EndGPURenderPass(renderPass);
+        SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmd, &color_target_info, 1, NULL);
+        SDL_EndGPURenderPass(render_pass);
     }
 
     // Submit.
