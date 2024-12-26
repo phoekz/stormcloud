@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zstd.h>
+#define SDL_MAIN_USE_CALLBACKS 1
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 
 //
 // Utilities.
@@ -14,6 +17,12 @@
 static uint64_t u64_min(uint64_t a, uint64_t b) {
     return a < b ? a : b;
 }
+
+#define SC_UNUSED(x) (void)(x)
+#define SC_ASSERT(expr) \
+    if (!(expr)) {      \
+        abort();        \
+    }
 
 //
 // Stormcloud data.
@@ -38,6 +47,9 @@ typedef struct ScData {
 } ScData;
 
 static void sc_data_load(ScData* sc_data, const char* pak_path) {
+    // Timing.
+    const uint64_t begin_time_ns = SDL_GetTicksNS();
+
     // Declarations.
     struct Header {
         uint64_t point_count;
@@ -59,7 +71,7 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     FILE* file = fopen(pak_path, "rb");
     char magic[8];
     fread(magic, 1, sizeof(magic), file);
-    assert(strncmp(magic, "TOKYOPAK", sizeof(magic)) == 0);
+    SC_ASSERT(strncmp(magic, "TOKYOPAK", sizeof(magic)) == 0);
     struct Header hdr = {0};
     fread(&hdr, 1, sizeof(hdr), file);
 
@@ -76,7 +88,7 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     fread(encoded_rs, 1, hdr.encoded_size_rs, file);
     fread(encoded_gs, 1, hdr.encoded_size_gs, file);
     fread(encoded_bs, 1, hdr.encoded_size_bs, file);
-    assert(fgetc(file) == EOF);
+    SC_ASSERT(fgetc(file) == EOF);
     fclose(file);
     file = NULL;
 
@@ -99,12 +111,12 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     size_t result_rs = ZSTD_decompress(rs, decoded_size_rs, encoded_rs, hdr.encoded_size_rs);
     size_t result_gs = ZSTD_decompress(gs, decoded_size_gs, encoded_gs, hdr.encoded_size_gs);
     size_t result_bs = ZSTD_decompress(bs, decoded_size_bs, encoded_bs, hdr.encoded_size_bs);
-    assert(!ZSTD_isError(result_xs) && result_xs == decoded_size_xs);
-    assert(!ZSTD_isError(result_ys) && result_ys == decoded_size_ys);
-    assert(!ZSTD_isError(result_zs) && result_zs == decoded_size_zs);
-    assert(!ZSTD_isError(result_rs) && result_rs == decoded_size_rs);
-    assert(!ZSTD_isError(result_gs) && result_gs == decoded_size_gs);
-    assert(!ZSTD_isError(result_bs) && result_bs == decoded_size_bs);
+    SC_ASSERT(!ZSTD_isError(result_xs) && result_xs == decoded_size_xs);
+    SC_ASSERT(!ZSTD_isError(result_ys) && result_ys == decoded_size_ys);
+    SC_ASSERT(!ZSTD_isError(result_zs) && result_zs == decoded_size_zs);
+    SC_ASSERT(!ZSTD_isError(result_rs) && result_rs == decoded_size_rs);
+    SC_ASSERT(!ZSTD_isError(result_gs) && result_gs == decoded_size_gs);
+    SC_ASSERT(!ZSTD_isError(result_bs) && result_bs == decoded_size_bs);
     free(encoded_xs);
     free(encoded_ys);
     free(encoded_zs);
@@ -134,6 +146,11 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     sc_data->point_count = hdr.point_count;
     sc_data->positions = (const ScPosition*)positions;
     sc_data->colors = (const ScColor*)colors;
+
+    // Timing.
+    const uint64_t end_time_ns = SDL_GetTicksNS();
+    const uint64_t elapsed_time_ns = end_time_ns - begin_time_ns;
+    SDL_Log("Loaded %d points in %" PRIu64 " ms", hdr.point_count, elapsed_time_ns / 1000000);
 }
 
 static void sc_data_free(ScData* sc_data) {
@@ -145,9 +162,15 @@ static void sc_data_free(ScData* sc_data) {
 // Main.
 //
 
-int main(int argc, char** argv) {
+static SDL_Window* window = NULL;
+static SDL_Renderer* renderer = NULL;
+
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
+    // Boilerplate.
+    SC_UNUSED(appstate);
+
     // Arguments.
-    assert(argc == 2);
+    SC_ASSERT(argc == 2);
 
     // Load.
     ScData sc_data = {0};
@@ -156,5 +179,45 @@ int main(int argc, char** argv) {
     // Free.
     sc_data_free(&sc_data);
 
-    return 0;
+    // SDL setup.
+    SDL_SetAppMetadata("Stormcloud", "1.0.0", "com.phoekz.stormcloud");
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (!SDL_CreateWindowAndRenderer("stormcloud", 1280, 800, 0, &window, &renderer)) {
+        SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+    // Boilerplate.
+    SC_UNUSED(appstate);
+
+    if (event->type == SDL_EVENT_QUIT) {
+        return SDL_APP_SUCCESS;
+    }
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppIterate(void* appstate) {
+    // Boilerplate.
+    SC_UNUSED(appstate);
+
+    // Clear.
+    SDL_SetRenderDrawColorFloat(renderer, 0.0f, 0.0f, 0.0f, 1.0f);
+    SDL_RenderClear(renderer);
+
+    // Present.
+    SDL_RenderPresent(renderer);
+
+    return SDL_APP_CONTINUE;
+}
+
+void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+    // Boilerplate.
+    SC_UNUSED(appstate);
+    SC_UNUSED(result);
 }
