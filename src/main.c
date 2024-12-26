@@ -162,62 +162,121 @@ static void sc_data_free(ScData* sc_data) {
 // Main.
 //
 
-static SDL_Window* window = NULL;
-static SDL_Renderer* renderer = NULL;
+typedef struct ScApp {
+    ScData data;
+    SDL_Window* window;
+    SDL_GPUDevice* device;
+} ScApp;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
-    // Boilerplate.
-    SC_UNUSED(appstate);
-
     // Arguments.
     SC_ASSERT(argc == 2);
 
-    // Load.
-    ScData sc_data = {0};
-    sc_data_load(&sc_data, argv[1]);
+    // Create app.
+    ScApp* app = calloc(1, sizeof(ScApp));
+    *appstate = app;
 
-    // Free.
-    sc_data_free(&sc_data);
-
-    // SDL setup.
+    // SDL.
     SDL_SetAppMetadata("Stormcloud", "1.0.0", "com.phoekz.stormcloud");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    if (!SDL_CreateWindowAndRenderer("stormcloud", 1280, 800, 0, &window, &renderer)) {
-        SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
+
+    // Window & device.
+    app->window = SDL_CreateWindow("stormcloud", 1280, 800, 0);
+    if (app->window == NULL) {
+        SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+    app->device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, false, NULL);
+    if (app->device == NULL) {
+        SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (!SDL_ClaimWindowForGPUDevice(app->device, app->window)) {
+        SDL_Log("SDL_ClaimWindowForGPUDevice failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    const SDL_GPUPresentMode present_mode = SDL_GPU_PRESENTMODE_VSYNC;
+    const SDL_GPUSwapchainComposition composition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR;
+    if (!SDL_WindowSupportsGPUPresentMode(app->device, app->window, present_mode)) {
+        SDL_Log("SDL_WindowSupportsGPUPresentMode failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (!SDL_SetGPUSwapchainParameters(app->device, app->window, composition, present_mode)) {
+        SDL_Log("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    // Load.
+    sc_data_load(&app->data, argv[1]);
+
     return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
-    // Boilerplate.
-    SC_UNUSED(appstate);
+    // Unpack.
+    ScApp* app = (ScApp*)appstate;
+    SC_UNUSED(app);
 
+    // Handle events.
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
     }
+
     return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppIterate(void* appstate) {
-    // Boilerplate.
-    SC_UNUSED(appstate);
+    // Unpack.
+    ScApp* app = (ScApp*)appstate;
 
-    // Clear.
-    SDL_SetRenderDrawColorFloat(renderer, 0.0f, 0.0f, 0.0f, 1.0f);
-    SDL_RenderClear(renderer);
+    // Command buffer.
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(app->device);
+    if (cmd == NULL) {
+        SDL_Log("SDL_AcquireGPUCommandBuffer failed: %s", SDL_GetError());
+        return -1;
+    }
 
-    // Present.
-    SDL_RenderPresent(renderer);
+    // Swapchain.
+    SDL_GPUTexture* swapchain = NULL;
+    if (!SDL_AcquireGPUSwapchainTexture(cmd, app->window, &swapchain, NULL, NULL)) {
+        SDL_Log("SDL_AcquireGPUSwapchainTexture failed: %s", SDL_GetError());
+        return -1;
+    }
+
+    // Render pass.
+    if (swapchain != NULL) {
+        SDL_GPUColorTargetInfo colorTargetInfo = {0};
+        colorTargetInfo.texture = swapchain;
+        colorTargetInfo.clear_color = (SDL_FColor) {1.0f, 0.5f, 0.0f, 1.0f};
+        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmd, &colorTargetInfo, 1, NULL);
+        SDL_EndGPURenderPass(renderPass);
+    }
+
+    // Submit.
+    SDL_SubmitGPUCommandBuffer(cmd);
 
     return SDL_APP_CONTINUE;
 }
 
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
-    // Boilerplate.
-    SC_UNUSED(appstate);
-    SC_UNUSED(result);
+    // Unpack.
+    ScApp* app = (ScApp*)appstate;
+
+    // Destroy.
+    SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
+    SDL_DestroyWindow(app->window);
+    SDL_DestroyGPUDevice(app->device);
+
+    // Free.
+    sc_data_free(&app->data);
+    free(app);
+
+    // End.
+    SC_ASSERT(result == SDL_APP_SUCCESS);
 }
