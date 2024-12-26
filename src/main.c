@@ -11,7 +11,7 @@
 #include <SDL3/SDL_main.h>
 
 //
-// Utilities.
+// Stormcloud - Utilities.
 //
 
 static uint64_t u64_min(uint64_t a, uint64_t b) {
@@ -32,14 +32,113 @@ static uint64_t u64_min(uint64_t a, uint64_t b) {
     }
 
 //
-// Stormcloud data.
+// Stormcloud - Math.
 //
 
-typedef struct ScPosition {
-    float x;
-    float y;
-    float z;
-} ScPosition;
+#define SC_PI SDL_PI_F
+
+float sc_rad_from_deg(float deg) {
+    return deg * (SC_PI / 180.0f);
+}
+
+typedef struct ScVector3 {
+    float x, y, z;
+} ScVector3;
+
+typedef struct ScMatrix4x4 {
+    float m11, m12, m13, m14;
+    float m21, m22, m23, m24;
+    float m31, m32, m33, m34;
+    float m41, m42, m43, m44;
+} ScMatrix4x4;
+
+ScVector3 sc_vector3_normalize(ScVector3 vec) {
+    const float len = SDL_sqrtf((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z));
+    return (ScVector3) {
+        vec.x / len,
+        vec.y / len,
+        vec.z / len,
+    };
+}
+
+float sc_vector3_dot(ScVector3 lhs, ScVector3 rhs) {
+    return (lhs.x * rhs.x) + (lhs.y * rhs.y) + (lhs.z * rhs.z);
+}
+
+ScVector3 sc_vector3_cross(ScVector3 lhs, ScVector3 rhs) {
+    return (ScVector3) {
+        lhs.y * rhs.z - rhs.y * lhs.z,
+        -(lhs.x * rhs.z - rhs.x * lhs.z),
+        lhs.x * rhs.y - rhs.x * lhs.y,
+    };
+}
+
+ScMatrix4x4 sc_matrix4x4_identity() {
+    // clang-format off
+    return (ScMatrix4x4) {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+    };
+    // clang-format on
+}
+
+ScMatrix4x4 sc_matrix4x4_multiply(ScMatrix4x4 lhs, ScMatrix4x4 rhs) {
+    ScMatrix4x4 m;
+    m.m11 = (lhs.m11 * rhs.m11) + (lhs.m12 * rhs.m21) + (lhs.m13 * rhs.m31) + (lhs.m14 * rhs.m41);
+    m.m12 = (lhs.m11 * rhs.m12) + (lhs.m12 * rhs.m22) + (lhs.m13 * rhs.m32) + (lhs.m14 * rhs.m42);
+    m.m13 = (lhs.m11 * rhs.m13) + (lhs.m12 * rhs.m23) + (lhs.m13 * rhs.m33) + (lhs.m14 * rhs.m43);
+    m.m14 = (lhs.m11 * rhs.m14) + (lhs.m12 * rhs.m24) + (lhs.m13 * rhs.m34) + (lhs.m14 * rhs.m44);
+    m.m21 = (lhs.m21 * rhs.m11) + (lhs.m22 * rhs.m21) + (lhs.m23 * rhs.m31) + (lhs.m24 * rhs.m41);
+    m.m22 = (lhs.m21 * rhs.m12) + (lhs.m22 * rhs.m22) + (lhs.m23 * rhs.m32) + (lhs.m24 * rhs.m42);
+    m.m23 = (lhs.m21 * rhs.m13) + (lhs.m22 * rhs.m23) + (lhs.m23 * rhs.m33) + (lhs.m24 * rhs.m43);
+    m.m24 = (lhs.m21 * rhs.m14) + (lhs.m22 * rhs.m24) + (lhs.m23 * rhs.m34) + (lhs.m24 * rhs.m44);
+    m.m31 = (lhs.m31 * rhs.m11) + (lhs.m32 * rhs.m21) + (lhs.m33 * rhs.m31) + (lhs.m34 * rhs.m41);
+    m.m32 = (lhs.m31 * rhs.m12) + (lhs.m32 * rhs.m22) + (lhs.m33 * rhs.m32) + (lhs.m34 * rhs.m42);
+    m.m33 = (lhs.m31 * rhs.m13) + (lhs.m32 * rhs.m23) + (lhs.m33 * rhs.m33) + (lhs.m34 * rhs.m43);
+    m.m34 = (lhs.m31 * rhs.m14) + (lhs.m32 * rhs.m24) + (lhs.m33 * rhs.m34) + (lhs.m34 * rhs.m44);
+    m.m41 = (lhs.m41 * rhs.m11) + (lhs.m42 * rhs.m21) + (lhs.m43 * rhs.m31) + (lhs.m44 * rhs.m41);
+    m.m42 = (lhs.m41 * rhs.m12) + (lhs.m42 * rhs.m22) + (lhs.m43 * rhs.m32) + (lhs.m44 * rhs.m42);
+    m.m43 = (lhs.m41 * rhs.m13) + (lhs.m42 * rhs.m23) + (lhs.m43 * rhs.m33) + (lhs.m44 * rhs.m43);
+    m.m44 = (lhs.m41 * rhs.m14) + (lhs.m42 * rhs.m24) + (lhs.m43 * rhs.m34) + (lhs.m44 * rhs.m44);
+    return m;
+}
+
+ScMatrix4x4 sc_matrix4x4_perspective(float fov, float aspect, float znear, float zfar) {
+    const float num = 1.0f / ((float)SDL_tanf(fov * 0.5f));
+    // clang-format off
+    return (ScMatrix4x4) {
+        num / aspect, 0, 0, 0,
+        0, num, 0, 0,
+        0, 0, zfar / (znear - zfar), -1,
+        0, 0, (znear * zfar) / (znear - zfar), 0,
+    };
+    // clang-format on
+}
+
+ScMatrix4x4 sc_matrix4x4_look_at(ScVector3 origin, ScVector3 target, ScVector3 up) {
+    const ScVector3 target_to_origin = {
+        origin.x - target.x,
+        origin.y - target.y,
+        origin.z - target.z,
+    };
+    const ScVector3 vec_a = sc_vector3_normalize(target_to_origin);
+    const ScVector3 vec_b = sc_vector3_normalize(sc_vector3_cross(up, vec_a));
+    const ScVector3 vec_c = sc_vector3_cross(vec_a, vec_b);
+    // clang-format off
+    return (ScMatrix4x4) {
+        vec_b.x, vec_c.x, vec_a.x, 0,
+        vec_b.y, vec_c.y, vec_a.y, 0,
+        vec_b.z, vec_c.z, vec_a.z, 0,
+        -sc_vector3_dot(vec_b, origin), -sc_vector3_dot(vec_c, origin), -sc_vector3_dot(vec_a, origin), 1,
+    };
+    // clang-format on
+}
+
+//
+// Stormcloud - Data.
+//
 
 typedef struct ScColor {
     uint8_t r;
@@ -49,7 +148,7 @@ typedef struct ScColor {
 
 typedef struct ScData {
     uint64_t point_count;
-    const ScPosition* positions;
+    const ScVector3* positions;
     const ScColor* colors;
 } ScData;
 
@@ -132,7 +231,7 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     free(encoded_bs);
 
     // Interleave.
-    ScPosition* positions = malloc(hdr.point_count * sizeof(ScPosition));
+    ScVector3* positions = malloc(hdr.point_count * sizeof(ScVector3));
     ScColor* colors = malloc(hdr.point_count * sizeof(ScColor));
     for (uint64_t i = 0; i < hdr.point_count; i++) {
         positions[i].x = xs[i];
@@ -151,7 +250,7 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
 
     // Output.
     sc_data->point_count = hdr.point_count;
-    sc_data->positions = (const ScPosition*)positions;
+    sc_data->positions = (const ScVector3*)positions;
     sc_data->colors = (const ScColor*)colors;
 
     // Timing.
@@ -166,17 +265,20 @@ static void sc_data_free(ScData* sc_data) {
 }
 
 //
-// Main.
+// Stormcloud - Main.
 //
+
+#define SC_WINDOW_WIDTH 1280
+#define SC_WINDOW_HEIGHT 800
 
 typedef struct ScApp {
     ScData data;
     SDL_Window* window;
     SDL_GPUDevice* device;
+    SDL_GPUBuffer* vertex_buffer;
     SDL_GPUShader* vertex_shader;
     SDL_GPUShader* fragment_shader;
     SDL_GPUGraphicsPipeline* pipeline;
-    SDL_GPUBuffer* vertex_buffer;
 } ScApp;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
@@ -195,7 +297,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     }
 
     // Window & device.
-    app->window = SDL_CreateWindow("stormcloud", 1280, 800, 0);
+    app->window = SDL_CreateWindow("stormcloud", SC_WINDOW_WIDTH, SC_WINDOW_HEIGHT, 0);
     if (app->window == NULL) {
         SC_LOG_ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -220,6 +322,56 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         return SDL_APP_FAILURE;
     }
 
+    // Vertex buffer.
+    typedef struct ScVertex {
+        ScVector3 position;
+        uint32_t color;
+    } ScVertex;
+    uint32_t vertex_count = 6;
+    {
+        app->vertex_buffer = SDL_CreateGPUBuffer(
+            app->device,
+            &(SDL_GPUBufferCreateInfo) {
+                .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+                .size = vertex_count * sizeof(ScVertex),
+            }
+        );
+        SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
+            app->device,
+            &(SDL_GPUTransferBufferCreateInfo) {
+                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+                .size = vertex_count * sizeof(ScVertex),
+            }
+        );
+        ScVertex* vertex_buffer_data =
+            SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
+        vertex_buffer_data[0] = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xff0000ff};
+        vertex_buffer_data[1] = (ScVertex) {.position = {1.0f, 0.0f, 0.0f}, .color = 0xff0000ff};
+        vertex_buffer_data[2] = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xff00ff00};
+        vertex_buffer_data[3] = (ScVertex) {.position = {0.0f, 1.0f, 0.0f}, .color = 0xff00ff00};
+        vertex_buffer_data[4] = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xffff0000};
+        vertex_buffer_data[5] = (ScVertex) {.position = {0.0f, 0.0f, 1.0f}, .color = 0xffff0000};
+        SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
+        SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
+        SDL_UploadToGPUBuffer(
+            copy_pass,
+            &(SDL_GPUTransferBufferLocation) {
+                .transfer_buffer = transfer_buffer,
+                .offset = 0,
+            },
+            &(SDL_GPUBufferRegion) {
+                .buffer = app->vertex_buffer,
+                .offset = 0,
+                .size = vertex_count * sizeof(ScVertex),
+            },
+            false
+        );
+        SDL_EndGPUCopyPass(copy_pass);
+        SDL_SubmitGPUCommandBuffer(upload_cmd);
+        SDL_ReleaseGPUTransferBuffer(app->device, transfer_buffer);
+    }
+
     // Shaders.
     size_t vertex_code_size;
     size_t fragment_code_size;
@@ -235,6 +387,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .entrypoint = "vs_main",
             .format = SDL_GPU_SHADERFORMAT_DXIL,
             .stage = SDL_GPU_SHADERSTAGE_VERTEX,
+            .num_samplers = 0,
+            .num_storage_textures = 0,
+            .num_storage_buffers = 0,
+            .num_uniform_buffers = 1,
         }
     );
     app->fragment_shader = SDL_CreateGPUShader(
@@ -245,6 +401,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .entrypoint = "fs_main",
             .format = SDL_GPU_SHADERFORMAT_DXIL,
             .stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+            .num_samplers = 0,
+            .num_storage_textures = 0,
+            .num_storage_buffers = 0,
+            .num_uniform_buffers = 0,
         }
     );
     SC_SDL_ASSERT(app->vertex_shader != NULL);
@@ -262,24 +422,33 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
                 (SDL_GPUVertexInputState) {
                     .vertex_buffer_descriptions = (SDL_GPUVertexBufferDescription[]) {{
                         .slot = 0,
-                        .pitch = 3 * sizeof(float),
+                        .pitch = sizeof(ScVertex),
                         .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
                         .instance_step_rate = 0,
                     }},
                     .num_vertex_buffers = 1,
-                    .vertex_attributes = (SDL_GPUVertexAttribute[]) {{
-                        .location = 0,
-                        .buffer_slot = 0,
-                        .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
-                        .offset = 0,
-                    }},
-                    .num_vertex_attributes = 1,
+                    .vertex_attributes =
+                        (SDL_GPUVertexAttribute[]) {
+                            {
+                                .location = 0,
+                                .buffer_slot = 0,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+                                .offset = 0,
+                            },
+                            {
+                                .location = 1,
+                                .buffer_slot = 0,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
+                                .offset = sizeof(ScVector3),
+                            },
+                        },
+                    .num_vertex_attributes = 2,
                 },
-            .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST,
             .rasterizer_state =
                 (SDL_GPURasterizerState) {
                     .fill_mode = SDL_GPU_FILLMODE_FILL,
-                    .cull_mode = SDL_GPU_CULLMODE_BACK,
+                    .cull_mode = SDL_GPU_CULLMODE_NONE,
                     .front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
                     .depth_bias_constant_factor = 0.0f,
                     .depth_bias_clamp = 0.0f,
@@ -307,51 +476,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         }
     );
     SC_SDL_ASSERT(app->pipeline != NULL);
-
-    // Vertex buffer.
-    app->vertex_buffer = SDL_CreateGPUBuffer(
-        app->device,
-        &(SDL_GPUBufferCreateInfo) {
-            .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-            .size = 3 * 3 * sizeof(float),
-        }
-    );
-    SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
-        app->device,
-        &(SDL_GPUTransferBufferCreateInfo) {
-            .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = 3 * 3 * sizeof(float),
-        }
-    );
-    float* vertex_buffer_positions = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
-    vertex_buffer_positions[0] = -1.0f;
-    vertex_buffer_positions[1] = -1.0f;
-    vertex_buffer_positions[2] = 0.0f;
-    vertex_buffer_positions[3] = 1.0f;
-    vertex_buffer_positions[4] = -1.0f;
-    vertex_buffer_positions[5] = 0.0f;
-    vertex_buffer_positions[6] = 0.0f;
-    vertex_buffer_positions[7] = 1.0f;
-    vertex_buffer_positions[8] = 0.0f;
-    SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
-    SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
-    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
-    SDL_UploadToGPUBuffer(
-        copy_pass,
-        &(SDL_GPUTransferBufferLocation) {
-            .transfer_buffer = transfer_buffer,
-            .offset = 0,
-        },
-        &(SDL_GPUBufferRegion) {
-            .buffer = app->vertex_buffer,
-            .offset = 0,
-            .size = 3 * 3 * sizeof(float),
-        },
-        false
-    );
-    SDL_EndGPUCopyPass(copy_pass);
-    SDL_SubmitGPUCommandBuffer(upload_cmd);
-    SDL_ReleaseGPUTransferBuffer(app->device, transfer_buffer);
 
     // Load.
     sc_data_load(&app->data, argv[1]);
@@ -400,6 +524,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
         SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmd, &color_target_info, 1, NULL);
         SDL_BindGPUGraphicsPipeline(render_pass, app->pipeline);
+
+        const float fov = sc_rad_from_deg(60.0f);
+        const float aspect = (float)SC_WINDOW_WIDTH / (float)SC_WINDOW_HEIGHT;
+        const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, 0.1f, 100.0f);
+        const ScMatrix4x4 view = sc_matrix4x4_look_at(
+            (ScVector3) {5.0f, 5.0f, 2.5f},
+            (ScVector3) {0.0f, 0.0f, 0.0f},
+            (ScVector3) {0.0f, 0.0f, 1.0f}
+        );
+        const ScMatrix4x4 transform = sc_matrix4x4_multiply(view, perspective);
+        SDL_PushGPUVertexUniformData(cmd, 0, &transform, sizeof(transform));
         SDL_BindGPUVertexBuffers(
             render_pass,
             0,
@@ -409,7 +544,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             },
             1
         );
-        SDL_DrawGPUPrimitives(render_pass, 3, 1, 0, 0);
+        SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
         SDL_EndGPURenderPass(render_pass);
     }
 
@@ -424,10 +559,10 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     ScApp* app = (ScApp*)appstate;
 
     // Destroy.
-    SDL_ReleaseGPUBuffer(app->device, app->vertex_buffer);
     SDL_ReleaseGPUGraphicsPipeline(app->device, app->pipeline);
     SDL_ReleaseGPUShader(app->device, app->vertex_shader);
     SDL_ReleaseGPUShader(app->device, app->fragment_shader);
+    SDL_ReleaseGPUBuffer(app->device, app->vertex_buffer);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);
     SDL_DestroyGPUDevice(app->device);

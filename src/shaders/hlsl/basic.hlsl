@@ -1,14 +1,21 @@
+cbuffer uniform_buffer: register(b0, space1) {
+    float4x4 transform: packoffset(c0);
+}
+
 struct vs_input {
     float3 position: TEXCOORD0;
+    float4 color: TEXCOORD1;
 };
 
 struct vs_output {
     float4 position: SV_Position;
+    float4 color: TEXCOORD0;
 };
 
 vs_output vs_main(vs_input input) {
     vs_output output;
-    output.position = float4(input.position, 1.0f);
+    output.position = mul(transform, float4(input.position, 1.0f));
+    output.color = input.color;
     return output;
 }
 
@@ -16,8 +23,8 @@ struct fs_output {
     float4 color: SV_Target0;
 };
 
-fs_output fs_main() {
+fs_output fs_main(vs_output input) {
     fs_output output;
-    output.color = float4(1.0f, 0.0f, 0.0f, 1.0f);
+    output.color = input.color;
     return output;
 }
