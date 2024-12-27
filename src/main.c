@@ -342,8 +342,8 @@ static void sc_data_free(ScData* sc_data) {
 // Stormcloud - Main.
 //
 
-#define SC_WINDOW_WIDTH 1280
-#define SC_WINDOW_HEIGHT 800
+#define SC_WINDOW_WIDTH 1920
+#define SC_WINDOW_HEIGHT 1200
 
 typedef struct ScApp {
     ScData data;
