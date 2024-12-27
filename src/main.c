@@ -193,6 +193,78 @@ typedef struct ScData {
     const ScPoint* points;
 } ScData;
 
+static ScColor sc_color_from_hsv(float hue, float saturation, float value) {
+    const float h = hue;
+    const float s = saturation;
+    const float v = value;
+    const uint32_t i = (uint32_t)SDL_floorf(h * 6);
+    const float f = h * 6 - i;
+    const float p = v * (1 - s);
+    const float q = v * (1 - f * s);
+    const float t = v * (1 - (1 - f) * s);
+
+    float r, g, b;
+    switch (i % 6) {
+        case 0: r = v, g = t, b = p; break;
+        case 1: r = q, g = v, b = p; break;
+        case 2: r = p, g = v, b = t; break;
+        case 3: r = p, g = q, b = v; break;
+        case 4: r = t, g = p, b = v; break;
+        case 5: r = v, g = p, b = q; break;
+        default: r = 0, g = 0, b = 0; break;
+    }
+
+    return (ScColor) {
+        .r = (uint8_t)(r * 255.0f),
+        .g = (uint8_t)(g * 255.0f),
+        .b = (uint8_t)(b * 255.0f),
+        .a = 255,
+    };
+}
+
+#define SC_MORTON_C0 0b00000000000000000000001111111111u
+#define SC_MORTON_C1 0b11111111000000000000000011111111u
+#define SC_MORTON_C2 0b00000011000000001111000000001111u
+#define SC_MORTON_C3 0b00000011000011000011000011000011u
+#define SC_MORTON_C4 0b00001001001001001001001001001001u
+#define SC_MORTON_BLOCK_SIZE 4096
+
+static uint32_t sc_morton_part1by2(uint32_t x) {
+    x &= SC_MORTON_C0;
+    x = (x ^ (x << 16u)) & SC_MORTON_C1;
+    x = (x ^ (x << 8u)) & SC_MORTON_C2;
+    x = (x ^ (x << 4u)) & SC_MORTON_C3;
+    x = (x ^ (x << 2u)) & SC_MORTON_C4;
+    return x;
+}
+
+static uint32_t sc_morton3_encode(uint32_t x, uint32_t y, uint32_t z) {
+    return (sc_morton_part1by2(z) << 2) + (sc_morton_part1by2(y) << 1) + sc_morton_part1by2(x);
+}
+
+typedef struct ScSortKey {
+    uint32_t key;
+    uint32_t index;
+} ScSortKey;
+
+static int32_t sc_sort_key_comparator(const void* lhs, const void* rhs) {
+    const ScSortKey* ptr_lhs = (const ScSortKey*)lhs;
+    const ScSortKey* ptr_rhs = (const ScSortKey*)rhs;
+    if (ptr_lhs->key < ptr_rhs->key) {
+        return -1;
+    }
+    if (ptr_lhs->key > ptr_rhs->key) {
+        return 1;
+    }
+    if (ptr_lhs->index < ptr_rhs->index) {
+        return -1;
+    }
+    if (ptr_lhs->index > ptr_rhs->index) {
+        return 1;
+    }
+    return 0;
+}
+
 static void sc_data_load(ScData* sc_data, const char* pak_path) {
     // Timing.
     const uint64_t begin_time_ns = SDL_GetTicksNS();
@@ -305,6 +377,57 @@ static void sc_data_load(ScData* sc_data, const char* pak_path) {
     free(rs);
     free(gs);
     free(bs);
+
+#if 0
+    // Sort.
+    {
+        // Initial morton order.
+        ScSortKey* sort_keys = malloc(hdr.point_count * sizeof(ScSortKey));
+        for (uint32_t i = 0; i < hdr.point_count; i++) {
+            sort_keys[i].key = sc_morton3_encode(
+                (uint32_t)(2.0f * points[i].position.x),
+                (uint32_t)(2.0f * points[i].position.y),
+                (uint32_t)(2.0f * points[i].position.z)
+            );
+            sort_keys[i].index = i;
+        }
+        qsort(sort_keys, hdr.point_count, sizeof(ScSortKey), sc_sort_key_comparator);
+
+        // Block-shuffle.
+        uint32_t entropy = SDL_rand_bits();
+        for (uint32_t i = 0; i < hdr.point_count; i++) {
+            sort_keys[i].key = entropy;
+            if ((i + 1) % SC_MORTON_BLOCK_SIZE == 0) {
+                entropy = SDL_rand_bits();
+            }
+        }
+        qsort(sort_keys, hdr.point_count, sizeof(ScSortKey), sc_sort_key_comparator);
+
+        // Reassign.
+        ScPoint* sorted_points = malloc(hdr.point_count * sizeof(ScPoint));
+        for (uint32_t i = 0; i < hdr.point_count; i++) {
+            sorted_points[i] = points[sort_keys[i].index];
+        }
+        free(sort_keys);
+        free(points);
+        points = sorted_points;
+    }
+
+    // Block-coloring.
+    ScColor colors[64];
+    for (uint32_t i = 0; i < 64; i++) {
+        colors[i] = sc_color_from_hsv((float)i / 64.0f, 1.0f, 1.0f);
+    }
+    uint32_t color_idx = 0;
+    for (uint32_t i = 0; i < hdr.point_count; i++) {
+        ScColor color = colors[color_idx];
+        points[i].color = color;
+        if ((i + 1) % SC_MORTON_BLOCK_SIZE == 0) {
+            SC_LOG_INFO("Block %d", i / SC_MORTON_BLOCK_SIZE);
+            color_idx = (color_idx + 1) % 64;
+        }
+    }
+#endif
 
     // Bounds.
     ScBounds3 bounds = (ScBounds3) {
@@ -778,10 +901,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Camera.
     const float fov = sc_rad_from_deg(60.0f);
     const float aspect = (float)SC_WINDOW_WIDTH / (float)SC_WINDOW_HEIGHT;
-    const float radius = 350.0f;
-    const float camera_height = 200.0f;
-    const float camera_origin_x = SDL_cosf(SDL_GetTicks() * 0.00025f) * radius;
-    const float camera_origin_y = SDL_sinf(SDL_GetTicks() * 0.00025f) * radius;
+    const float mult = 100.0f;
+    const float radius = 2.5f * mult;
+    const float time = 1.0f + 0.000025f * SDL_GetTicks();
+    const float camera_height = 2.0f * mult;
+    const float camera_origin_x = SDL_cosf(time * SC_PI * 3.0f / 2.0f) * radius;
+    const float camera_origin_y = SDL_sinf(time * SC_PI * 3.0f / 2.0f) * radius;
     const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, 0.1f, 1000.0f);
     const ScMatrix4x4 view = sc_matrix4x4_look_at(
         (ScVector3) {camera_origin_x, camera_origin_y, camera_height},
