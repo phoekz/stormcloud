@@ -38,7 +38,8 @@ endif()
 # Shaders
 #
 set(shader_files
-    ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/basic.hlsl
+    ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/point.hlsl
+    ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/bounds.hlsl
 )
 
 foreach(shader_file ${shader_files})
@@ -66,7 +67,7 @@ target_compile_options(stormcloud PRIVATE /W4 /WX)
 target_link_libraries(stormcloud PRIVATE libzstd_static ${SDL3_SOURCE_DIR}/lib/x64/SDL3.lib)
 target_include_directories(stormcloud PRIVATE ${SDL3_SOURCE_DIR}/include)
 set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_COMMAND_ARGUMENTS "temp/09KC6340.pak2")
+set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_COMMAND_ARGUMENTS "temp/tokyo.oct")
 add_custom_command(TARGET stormcloud POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${SDL3_SOURCE_DIR}/lib/x64/SDL3.dll $<TARGET_FILE_DIR:stormcloud>
     COMMENT "Copying SDL3.dll to $<TARGET_FILE_DIR:stormcloud>"

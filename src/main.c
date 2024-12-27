@@ -49,11 +49,6 @@ typedef struct ScMatrix4x4 {
     float m41, m42, m43, m44;
 } ScMatrix4x4;
 
-typedef struct ScBounds3 {
-    ScVector3 min;
-    ScVector3 max;
-} ScBounds3;
-
 ScVector3 sc_vector3_sub(ScVector3 lhs, ScVector3 rhs) {
     return (ScVector3) {
         lhs.x - rhs.x,
@@ -146,319 +141,105 @@ ScMatrix4x4 sc_matrix4x4_look_at(ScVector3 origin, ScVector3 target, ScVector3 u
     // clang-format on
 }
 
-ScBounds3 sc_bounds3_new() {
-    return (ScBounds3) {
-        .min = {FLT_MAX, FLT_MAX, FLT_MAX},
-        .max = {-FLT_MAX, -FLT_MAX, -FLT_MAX},
-    };
-}
-
-ScVector3 sc_bounds3_center(ScBounds3 bounds) {
-    return (ScVector3) {
-        (bounds.min.x + bounds.max.x) * 0.5f,
-        (bounds.min.y + bounds.max.y) * 0.5f,
-        (bounds.min.z + bounds.max.z) * 0.5f,
-    };
-}
-
-ScBounds3 sc_bounds3_extend(ScBounds3 bounds, ScVector3 point) {
-    bounds.min.x = SDL_min(bounds.min.x, point.x);
-    bounds.min.y = SDL_min(bounds.min.y, point.y);
-    bounds.min.z = SDL_min(bounds.min.z, point.z);
-    bounds.max.x = SDL_max(bounds.max.x, point.x);
-    bounds.max.y = SDL_max(bounds.max.y, point.y);
-    bounds.max.z = SDL_max(bounds.max.z, point.z);
-    return bounds;
-}
-
 //
 // Stormcloud - Data.
 //
 
-typedef struct ScColor {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    uint8_t a;
-} ScColor;
-
-typedef struct ScPoint {
-    ScVector3 position;
-    ScColor color;
-} ScPoint;
-
-typedef struct ScData {
-    ScBounds3 bounds;
-    uint32_t point_count;
-    const ScPoint* points;
-} ScData;
-
-static ScColor sc_color_from_hsv(float hue, float saturation, float value) {
-    const float h = hue;
-    const float s = saturation;
-    const float v = value;
-    const uint32_t i = (uint32_t)SDL_floorf(h * 6);
-    const float f = h * 6 - i;
-    const float p = v * (1 - s);
-    const float q = v * (1 - f * s);
-    const float t = v * (1 - (1 - f) * s);
-
-    float r, g, b;
-    switch (i % 6) {
-        case 0: r = v, g = t, b = p; break;
-        case 1: r = q, g = v, b = p; break;
-        case 2: r = p, g = v, b = t; break;
-        case 3: r = p, g = q, b = v; break;
-        case 4: r = t, g = p, b = v; break;
-        case 5: r = v, g = p, b = q; break;
-        default: r = 0, g = 0, b = 0; break;
-    }
-
-    return (ScColor) {
-        .r = (uint8_t)(r * 255.0f),
-        .g = (uint8_t)(g * 255.0f),
-        .b = (uint8_t)(b * 255.0f),
-        .a = 255,
-    };
-}
-
-#define SC_MORTON_C0 0b00000000000000000000001111111111u
-#define SC_MORTON_C1 0b11111111000000000000000011111111u
-#define SC_MORTON_C2 0b00000011000000001111000000001111u
-#define SC_MORTON_C3 0b00000011000011000011000011000011u
-#define SC_MORTON_C4 0b00001001001001001001001001001001u
-#define SC_MORTON_BLOCK_SIZE 4096
-
-static uint32_t sc_morton_part1by2(uint32_t x) {
-    x &= SC_MORTON_C0;
-    x = (x ^ (x << 16u)) & SC_MORTON_C1;
-    x = (x ^ (x << 8u)) & SC_MORTON_C2;
-    x = (x ^ (x << 4u)) & SC_MORTON_C3;
-    x = (x ^ (x << 2u)) & SC_MORTON_C4;
-    return x;
-}
-
-static uint32_t sc_morton3_encode(uint32_t x, uint32_t y, uint32_t z) {
-    return (sc_morton_part1by2(z) << 2) + (sc_morton_part1by2(y) << 1) + sc_morton_part1by2(x);
-}
-
-typedef struct ScSortKey {
-    uint32_t key;
+typedef struct ScOctreeNode {
     uint32_t index;
-} ScSortKey;
+    uint32_t level;
+    int32_t min_x;
+    int32_t min_y;
+    int32_t min_z;
+    int32_t max_x;
+    int32_t max_y;
+    int32_t max_z;
+    uint32_t mask;
+    uint32_t pad_0;
+    uint32_t pad_1;
+    uint32_t pad_2;
+    uint64_t point_count;
+    uint64_t point_offset;
+    uint32_t octants[8];
+} ScOctreeNode;
 
-static int32_t sc_sort_key_comparator(const void* lhs, const void* rhs) {
-    const ScSortKey* ptr_lhs = (const ScSortKey*)lhs;
-    const ScSortKey* ptr_rhs = (const ScSortKey*)rhs;
-    if (ptr_lhs->key < ptr_rhs->key) {
-        return -1;
-    }
-    if (ptr_lhs->key > ptr_rhs->key) {
-        return 1;
-    }
-    if (ptr_lhs->index < ptr_rhs->index) {
-        return -1;
-    }
-    if (ptr_lhs->index > ptr_rhs->index) {
-        return 1;
-    }
-    return 0;
-}
+typedef struct ScOctreeNodeInstance {
+    int32_t min_x;
+    int32_t min_y;
+    int32_t min_z;
+    int32_t max_x;
+    int32_t max_y;
+    int32_t max_z;
+} ScOctreeNodeInstance;
 
-static void sc_data_load(ScData* sc_data, const char* pak_path) {
+typedef struct ScOctreePoint {
+    uint32_t position;
+    uint32_t color;
+} ScOctreePoint;
+
+typedef struct ScOctree {
+    ScOctreeNode* nodes;
+    ScOctreeNodeInstance* instances;
+    uint64_t node_count;
+    ScOctreePoint* points;
+    uint64_t point_count;
+} ScOctree;
+
+static void sc_octree_load(ScOctree* octree, const char* file_path) {
     // Timing.
     const uint64_t begin_time_ns = SDL_GetTicksNS();
 
-    // Declarations.
-    struct Header {
-        uint32_t point_count;
-        float min_x;
-        float min_y;
-        float min_z;
-        float max_x;
-        float max_y;
-        float max_z;
-        uint32_t encoded_size_xs;
-        uint32_t encoded_size_ys;
-        uint32_t encoded_size_zs;
-        uint32_t encoded_size_rs;
-        uint32_t encoded_size_gs;
-        uint32_t encoded_size_bs;
-    };
-
     // Load header.
-    FILE* file = fopen(pak_path, "rb");
+    FILE* file = fopen(file_path, "rb");
     char magic[8];
     fread(magic, 1, sizeof(magic), file);
-    SC_ASSERT(strncmp(magic, "TOKYOPAK", sizeof(magic)) == 0);
-    struct Header hdr = {0};
-    fread(&hdr, 1, sizeof(hdr), file);
+    SC_ASSERT(strncmp(magic, "TOKYOOCT", sizeof(magic)) == 0);
+    uint64_t node_count;
+    fread(&node_count, 1, sizeof(node_count), file);
+    SC_LOG_INFO("Node count: %llu", node_count);
+    uint64_t point_count;
+    fread(&point_count, 1, sizeof(point_count), file);
+    SC_LOG_INFO("Point count: %llu", point_count);
 
-    // Load.
-    uint8_t* encoded_xs = malloc(hdr.encoded_size_xs);
-    uint8_t* encoded_ys = malloc(hdr.encoded_size_ys);
-    uint8_t* encoded_zs = malloc(hdr.encoded_size_zs);
-    uint8_t* encoded_rs = malloc(hdr.encoded_size_rs);
-    uint8_t* encoded_gs = malloc(hdr.encoded_size_gs);
-    uint8_t* encoded_bs = malloc(hdr.encoded_size_bs);
-    fread(encoded_xs, 1, hdr.encoded_size_xs, file);
-    fread(encoded_ys, 1, hdr.encoded_size_ys, file);
-    fread(encoded_zs, 1, hdr.encoded_size_zs, file);
-    fread(encoded_rs, 1, hdr.encoded_size_rs, file);
-    fread(encoded_gs, 1, hdr.encoded_size_gs, file);
-    fread(encoded_bs, 1, hdr.encoded_size_bs, file);
-    SC_ASSERT(fgetc(file) == EOF);
-    fclose(file);
-    file = NULL;
+    // Load nodes.
+    ScOctreeNode* nodes = malloc(node_count * sizeof(ScOctreeNode));
+    fread(nodes, 1, node_count * sizeof(ScOctreeNode), file);
 
-    // Decode.
-    uint32_t decoded_size_xs = hdr.point_count * sizeof(float);
-    uint32_t decoded_size_ys = hdr.point_count * sizeof(float);
-    uint32_t decoded_size_zs = hdr.point_count * sizeof(float);
-    uint32_t decoded_size_rs = hdr.point_count * sizeof(uint8_t);
-    uint32_t decoded_size_gs = hdr.point_count * sizeof(uint8_t);
-    uint32_t decoded_size_bs = hdr.point_count * sizeof(uint8_t);
-    float* xs = malloc(decoded_size_xs);
-    float* ys = malloc(decoded_size_ys);
-    float* zs = malloc(decoded_size_zs);
-    uint8_t* rs = malloc(decoded_size_rs);
-    uint8_t* gs = malloc(decoded_size_gs);
-    uint8_t* bs = malloc(decoded_size_bs);
-    size_t result_xs = ZSTD_decompress(xs, decoded_size_xs, encoded_xs, hdr.encoded_size_xs);
-    size_t result_ys = ZSTD_decompress(ys, decoded_size_ys, encoded_ys, hdr.encoded_size_ys);
-    size_t result_zs = ZSTD_decompress(zs, decoded_size_zs, encoded_zs, hdr.encoded_size_zs);
-    size_t result_rs = ZSTD_decompress(rs, decoded_size_rs, encoded_rs, hdr.encoded_size_rs);
-    size_t result_gs = ZSTD_decompress(gs, decoded_size_gs, encoded_gs, hdr.encoded_size_gs);
-    size_t result_bs = ZSTD_decompress(bs, decoded_size_bs, encoded_bs, hdr.encoded_size_bs);
-    SC_ASSERT(!ZSTD_isError(result_xs) && result_xs == decoded_size_xs);
-    SC_ASSERT(!ZSTD_isError(result_ys) && result_ys == decoded_size_ys);
-    SC_ASSERT(!ZSTD_isError(result_zs) && result_zs == decoded_size_zs);
-    SC_ASSERT(!ZSTD_isError(result_rs) && result_rs == decoded_size_rs);
-    SC_ASSERT(!ZSTD_isError(result_gs) && result_gs == decoded_size_gs);
-    SC_ASSERT(!ZSTD_isError(result_bs) && result_bs == decoded_size_bs);
-    free(encoded_xs);
-    free(encoded_ys);
-    free(encoded_zs);
-    free(encoded_rs);
-    free(encoded_gs);
-    free(encoded_bs);
+    // Load points.
+    ScOctreePoint* points = malloc(point_count * sizeof(ScOctreePoint));
+    fread(points, 1, point_count * sizeof(ScOctreePoint), file);
 
-    // Pack.
-    const uint8_t srgb_to_linear_lut[256] = {
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,
-        1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   4,   4,
-        4,   4,   4,   5,   5,   5,   5,   6,   6,   6,   6,   7,   7,   7,   8,   8,   8,   9,
-        9,   9,   10,  10,  10,  11,  11,  11,  12,  12,  13,  13,  13,  14,  14,  15,  15,  16,
-        16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21,  22,  22,  23,  23,  24,  24,  25,
-        26,  26,  27,  27,  28,  29,  29,  30,  31,  31,  32,  33,  33,  34,  35,  36,  36,  37,
-        38,  38,  39,  40,  41,  42,  42,  43,  44,  45,  46,  47,  47,  48,  49,  50,  51,  52,
-        53,  54,  55,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  70,
-        71,  72,  73,  74,  75,  76,  77,  78,  80,  81,  82,  83,  84,  85,  87,  88,  89,  90,
-        92,  93,  94,  95,  97,  98,  99,  101, 102, 103, 105, 106, 107, 109, 110, 112, 113, 114,
-        116, 117, 119, 120, 122, 123, 125, 126, 128, 129, 131, 132, 134, 135, 137, 139, 140, 142,
-        144, 145, 147, 148, 150, 152, 153, 155, 157, 159, 160, 162, 164, 166, 167, 169, 171, 173,
-        175, 176, 178, 180, 182, 184, 186, 188, 190, 192, 193, 195, 197, 199, 201, 203, 205, 207,
-        209, 211, 213, 215, 218, 220, 222, 224, 226, 228, 230, 232, 235, 237, 239, 241, 243, 245,
-        248, 250, 252, 255,
-    };
-    ScPoint* points = malloc(hdr.point_count * sizeof(ScPoint));
-    for (uint32_t i = 0; i < hdr.point_count; i++) {
-        points[i].position.x = xs[i];
-        points[i].position.y = ys[i];
-        points[i].position.z = zs[i];
-        points[i].color.r = srgb_to_linear_lut[rs[i]];
-        points[i].color.g = srgb_to_linear_lut[gs[i]];
-        points[i].color.b = srgb_to_linear_lut[bs[i]];
-        points[i].color.a = 255;
+    // Create instances.
+    ScOctreeNodeInstance* instances = malloc(node_count * sizeof(ScOctreeNodeInstance));
+    for (uint64_t i = 0; i < node_count; ++i) {
+        const ScOctreeNode* node = &nodes[i];
+        instances[i] = (ScOctreeNodeInstance) {
+            .min_x = node->min_x,
+            .min_y = node->min_y,
+            .min_z = node->min_z,
+            .max_x = node->max_x,
+            .max_y = node->max_y,
+            .max_z = node->max_z,
+        };
     }
-    free(xs);
-    free(ys);
-    free(zs);
-    free(rs);
-    free(gs);
-    free(bs);
-
-#if 0
-    // Sort.
-    {
-        // Initial morton order.
-        ScSortKey* sort_keys = malloc(hdr.point_count * sizeof(ScSortKey));
-        for (uint32_t i = 0; i < hdr.point_count; i++) {
-            sort_keys[i].key = sc_morton3_encode(
-                (uint32_t)(2.0f * points[i].position.x),
-                (uint32_t)(2.0f * points[i].position.y),
-                (uint32_t)(2.0f * points[i].position.z)
-            );
-            sort_keys[i].index = i;
-        }
-        qsort(sort_keys, hdr.point_count, sizeof(ScSortKey), sc_sort_key_comparator);
-
-        // Block-shuffle.
-        uint32_t entropy = SDL_rand_bits();
-        for (uint32_t i = 0; i < hdr.point_count; i++) {
-            sort_keys[i].key = entropy;
-            if ((i + 1) % SC_MORTON_BLOCK_SIZE == 0) {
-                entropy = SDL_rand_bits();
-            }
-        }
-        qsort(sort_keys, hdr.point_count, sizeof(ScSortKey), sc_sort_key_comparator);
-
-        // Reassign.
-        ScPoint* sorted_points = malloc(hdr.point_count * sizeof(ScPoint));
-        for (uint32_t i = 0; i < hdr.point_count; i++) {
-            sorted_points[i] = points[sort_keys[i].index];
-        }
-        free(sort_keys);
-        free(points);
-        points = sorted_points;
-    }
-
-    // Block-coloring.
-    ScColor colors[64];
-    for (uint32_t i = 0; i < 64; i++) {
-        colors[i] = sc_color_from_hsv((float)i / 64.0f, 1.0f, 1.0f);
-    }
-    uint32_t color_idx = 0;
-    for (uint32_t i = 0; i < hdr.point_count; i++) {
-        ScColor color = colors[color_idx];
-        points[i].color = color;
-        if ((i + 1) % SC_MORTON_BLOCK_SIZE == 0) {
-            SC_LOG_INFO("Block %d", i / SC_MORTON_BLOCK_SIZE);
-            color_idx = (color_idx + 1) % 64;
-        }
-    }
-#endif
-
-    // Bounds.
-    ScBounds3 bounds = (ScBounds3) {
-        .min = (ScVector3) {0.0f, 0.0f, 0.0f},
-        .max = sc_vector3_sub(
-            (ScVector3) {hdr.max_x, hdr.max_y, hdr.max_z},
-            (ScVector3) {hdr.min_x, hdr.min_y, hdr.min_z}
-        ),
-    };
-    ScVector3 center = sc_bounds3_center(bounds);
-
-    // Re-center.
-    for (uint32_t i = 0; i < hdr.point_count; i++) {
-        points[i].position = sc_vector3_sub(points[i].position, center);
-    }
-    bounds.min = sc_vector3_sub(bounds.min, center);
-    bounds.max = sc_vector3_sub(bounds.max, center);
 
     // Output.
-    sc_data->bounds = bounds;
-    sc_data->point_count = (uint32_t)hdr.point_count;
-    sc_data->points = (const ScPoint*)points;
+    octree->nodes = nodes;
+    octree->instances = instances;
+    octree->node_count = node_count;
+    octree->points = points;
+    octree->point_count = point_count;
 
     // Timing.
     const uint64_t end_time_ns = SDL_GetTicksNS();
     const uint64_t elapsed_time_ns = end_time_ns - begin_time_ns;
-    SC_LOG_INFO("Loaded %d points in %" PRIu64 " ms", hdr.point_count, elapsed_time_ns / 1000000);
+    SC_LOG_INFO("Loaded %d points in %" PRIu64 " ms", point_count, elapsed_time_ns / 1000000);
 }
 
-static void sc_data_free(ScData* sc_data) {
-    free((void*)sc_data->points);
+static void sc_octree_free(ScOctree* octree) {
+    free(octree->nodes);
+    free(octree->instances);
+    free(octree->points);
 }
 
 //
@@ -469,17 +250,19 @@ static void sc_data_free(ScData* sc_data) {
 #define SC_WINDOW_HEIGHT 1200
 
 typedef struct ScApp {
-    ScData data;
+    ScOctree octree;
     SDL_Window* window;
     SDL_GPUDevice* device;
     SDL_GPUTexture* depth_stencil_texture;
+
     SDL_GPUBuffer* point_buffer;
-    SDL_GPUBuffer* line_buffer;
-    uint32_t line_vertex_count;
-    SDL_GPUShader* vertex_shader;
-    SDL_GPUShader* fragment_shader;
+    SDL_GPUBuffer* node_buffer;
+
+    SDL_GPUBuffer* bounds_buffer;
+    uint32_t bounds_vertex_count;
+
     SDL_GPUGraphicsPipeline* point_pipeline;
-    SDL_GPUGraphicsPipeline* line_pipeline;
+    SDL_GPUGraphicsPipeline* bounds_pipeline;
 } ScApp;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
@@ -491,7 +274,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     *appstate = app;
 
     // Load.
-    sc_data_load(&app->data, argv[1]);
+    sc_octree_load(&app->octree, argv[1]);
 
     // SDL.
     SDL_SetAppMetadata("stormcloud", "1.0.0", "com.phoekz.stormcloud");
@@ -546,23 +329,24 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     // Vertex buffer - points.
     {
-        const uint32_t vertex_count = app->data.point_count;
+        const uint32_t vertex_count = (uint32_t)app->octree.point_count;
+        const uint32_t vertex_byte_count = vertex_count * sizeof(ScOctreePoint);
         app->point_buffer = SDL_CreateGPUBuffer(
             app->device,
             &(SDL_GPUBufferCreateInfo) {
                 .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-                .size = vertex_count * sizeof(ScPoint),
+                .size = vertex_byte_count,
             }
         );
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
             app->device,
             &(SDL_GPUTransferBufferCreateInfo) {
                 .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-                .size = vertex_count * sizeof(ScPoint),
+                .size = vertex_byte_count,
             }
         );
-        ScPoint* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
-        memcpy(data, app->data.points, vertex_count * sizeof(ScPoint));
+        ScOctreePoint* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
+        memcpy(data, app->octree.points, vertex_byte_count);
         SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
         SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
@@ -575,7 +359,48 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             &(SDL_GPUBufferRegion) {
                 .buffer = app->point_buffer,
                 .offset = 0,
-                .size = vertex_count * sizeof(ScPoint),
+                .size = vertex_byte_count,
+            },
+            false
+        );
+        SDL_EndGPUCopyPass(copy_pass);
+        SDL_SubmitGPUCommandBuffer(upload_cmd);
+        SDL_ReleaseGPUTransferBuffer(app->device, transfer_buffer);
+    }
+
+    // Vertex buffer - nodes.
+    {
+        const uint32_t node_count = (uint32_t)app->octree.node_count;
+        const uint32_t node_byte_count = node_count * sizeof(ScOctreeNodeInstance);
+        app->node_buffer = SDL_CreateGPUBuffer(
+            app->device,
+            &(SDL_GPUBufferCreateInfo) {
+                .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+                .size = node_byte_count,
+            }
+        );
+        SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
+            app->device,
+            &(SDL_GPUTransferBufferCreateInfo) {
+                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+                .size = node_byte_count,
+            }
+        );
+        ScOctreeNodeInstance* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
+        memcpy(data, app->octree.instances, node_byte_count);
+        SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
+        SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
+        SDL_UploadToGPUBuffer(
+            copy_pass,
+            &(SDL_GPUTransferBufferLocation) {
+                .transfer_buffer = transfer_buffer,
+                .offset = 0,
+            },
+            &(SDL_GPUBufferRegion) {
+                .buffer = app->node_buffer,
+                .offset = 0,
+                .size = node_byte_count,
             },
             false
         );
@@ -590,65 +415,52 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         uint32_t color;
     } ScVertex;
     {
-        uint32_t vertex_count = 0;
-        vertex_count += 6;
-        vertex_count += 2 * 12;
-        app->line_vertex_count = vertex_count;
-        app->line_buffer = SDL_CreateGPUBuffer(
+        const uint32_t vertex_count = 2 * 12;
+        const uint32_t vertex_byte_count = vertex_count * sizeof(ScVertex);
+        app->bounds_vertex_count = vertex_count;
+        app->bounds_buffer = SDL_CreateGPUBuffer(
             app->device,
             &(SDL_GPUBufferCreateInfo) {
                 .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-                .size = vertex_count * sizeof(ScVertex),
+                .size = vertex_byte_count,
             }
         );
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(
             app->device,
             &(SDL_GPUTransferBufferCreateInfo) {
                 .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-                .size = vertex_count * sizeof(ScVertex),
+                .size = vertex_byte_count,
             }
         );
         ScVertex* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
-        {
-            *data++ = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xff0000ff};
-            *data++ = (ScVertex) {.position = {1.0f, 0.0f, 0.0f}, .color = 0xff0000ff};
-            *data++ = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xff00ff00};
-            *data++ = (ScVertex) {.position = {0.0f, 1.0f, 0.0f}, .color = 0xff00ff00};
-            *data++ = (ScVertex) {.position = {0.0f, 0.0f, 0.0f}, .color = 0xffff0000};
-            *data++ = (ScVertex) {.position = {0.0f, 0.0f, 1.0f}, .color = 0xffff0000};
-        }
-        {
-            // bounding box lines
-            ScBounds3 bounds = app->data.bounds;
-            ScVector3 mn = bounds.min;
-            ScVector3 mx = bounds.max;
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        const ScVector3 mn = {0.0f, 0.0f, 0.0f};
+        const ScVector3 mx = {1.0f, 1.0f, 1.0f};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
 
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
 
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-            *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
-        }
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
         SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
         SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
@@ -659,9 +471,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
                 .offset = 0,
             },
             &(SDL_GPUBufferRegion) {
-                .buffer = app->line_buffer,
+                .buffer = app->bounds_buffer,
                 .offset = 0,
-                .size = vertex_count * sizeof(ScVertex),
+                .size = vertex_byte_count,
             },
             false
         );
@@ -671,76 +483,143 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     }
 
     // Shaders.
-    size_t vertex_code_size;
-    size_t fragment_code_size;
-    void* vertex_code = SDL_LoadFile("src/shaders/dxil/basic.vert", &vertex_code_size);
-    void* fragment_code = SDL_LoadFile("src/shaders/dxil/basic.frag", &fragment_code_size);
-    SC_ASSERT(vertex_code != NULL && vertex_code_size > 0);
-    SC_ASSERT(fragment_code != NULL && fragment_code_size > 0);
-    app->vertex_shader = SDL_CreateGPUShader(
-        app->device,
-        &(SDL_GPUShaderCreateInfo) {
-            .code = vertex_code,
-            .code_size = vertex_code_size,
-            .entrypoint = "vs_main",
-            .format = SDL_GPU_SHADERFORMAT_DXIL,
-            .stage = SDL_GPU_SHADERSTAGE_VERTEX,
-            .num_samplers = 0,
-            .num_storage_textures = 0,
-            .num_storage_buffers = 0,
-            .num_uniform_buffers = 1,
-        }
-    );
-    app->fragment_shader = SDL_CreateGPUShader(
-        app->device,
-        &(SDL_GPUShaderCreateInfo) {
-            .code = fragment_code,
-            .code_size = fragment_code_size,
-            .entrypoint = "fs_main",
-            .format = SDL_GPU_SHADERFORMAT_DXIL,
-            .stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
-            .num_samplers = 0,
-            .num_storage_textures = 0,
-            .num_storage_buffers = 0,
-            .num_uniform_buffers = 0,
-        }
-    );
-    SC_SDL_ASSERT(app->vertex_shader != NULL);
-    SC_SDL_ASSERT(app->fragment_shader != NULL);
-    SDL_free(vertex_code);
-    SDL_free(fragment_code);
+    SDL_GPUShader* point_fragment_shader = NULL;
+    SDL_GPUShader* point_vertex_shader = NULL;
+    SDL_GPUShader* bounds_fragment_shader = NULL;
+    SDL_GPUShader* bounds_vertex_shader = NULL;
+    {
+        size_t vertex_code_size;
+        size_t fragment_code_size;
+        void* vertex_code = SDL_LoadFile("src/shaders/dxil/point.vert", &vertex_code_size);
+        void* fragment_code = SDL_LoadFile("src/shaders/dxil/point.frag", &fragment_code_size);
+        SC_ASSERT(vertex_code != NULL && vertex_code_size > 0);
+        SC_ASSERT(fragment_code != NULL && fragment_code_size > 0);
+        point_vertex_shader = SDL_CreateGPUShader(
+            app->device,
+            &(SDL_GPUShaderCreateInfo) {
+                .code = vertex_code,
+                .code_size = vertex_code_size,
+                .entrypoint = "vs_main",
+                .format = SDL_GPU_SHADERFORMAT_DXIL,
+                .stage = SDL_GPU_SHADERSTAGE_VERTEX,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+            }
+        );
+        point_fragment_shader = SDL_CreateGPUShader(
+            app->device,
+            &(SDL_GPUShaderCreateInfo) {
+                .code = fragment_code,
+                .code_size = fragment_code_size,
+                .entrypoint = "fs_main",
+                .format = SDL_GPU_SHADERFORMAT_DXIL,
+                .stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            }
+        );
+        SC_SDL_ASSERT(point_vertex_shader != NULL);
+        SC_SDL_ASSERT(point_fragment_shader != NULL);
+        SDL_free(vertex_code);
+        SDL_free(fragment_code);
+    }
+    {
+        size_t vertex_code_size;
+        size_t fragment_code_size;
+        void* vertex_code = SDL_LoadFile("src/shaders/dxil/bounds.vert", &vertex_code_size);
+        void* fragment_code = SDL_LoadFile("src/shaders/dxil/bounds.frag", &fragment_code_size);
+        SC_ASSERT(vertex_code != NULL && vertex_code_size > 0);
+        SC_ASSERT(fragment_code != NULL && fragment_code_size > 0);
+        bounds_vertex_shader = SDL_CreateGPUShader(
+            app->device,
+            &(SDL_GPUShaderCreateInfo) {
+                .code = vertex_code,
+                .code_size = vertex_code_size,
+                .entrypoint = "vs_main",
+                .format = SDL_GPU_SHADERFORMAT_DXIL,
+                .stage = SDL_GPU_SHADERSTAGE_VERTEX,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+            }
+        );
+        bounds_fragment_shader = SDL_CreateGPUShader(
+            app->device,
+            &(SDL_GPUShaderCreateInfo) {
+                .code = fragment_code,
+                .code_size = fragment_code_size,
+                .entrypoint = "fs_main",
+                .format = SDL_GPU_SHADERFORMAT_DXIL,
+                .stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            }
+        );
+        SC_SDL_ASSERT(bounds_vertex_shader != NULL);
+        SC_SDL_ASSERT(bounds_fragment_shader != NULL);
+        SDL_free(vertex_code);
+        SDL_free(fragment_code);
+    }
 
     // Pipeline.
     app->point_pipeline = SDL_CreateGPUGraphicsPipeline(
         app->device,
         &(SDL_GPUGraphicsPipelineCreateInfo) {
-            .vertex_shader = app->vertex_shader,
-            .fragment_shader = app->fragment_shader,
+            .vertex_shader = point_vertex_shader,
+            .fragment_shader = point_fragment_shader,
             .vertex_input_state =
                 (SDL_GPUVertexInputState) {
-                    .vertex_buffer_descriptions = (SDL_GPUVertexBufferDescription[]) {{
-                        .slot = 0,
-                        .pitch = sizeof(ScPoint),
-                        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-                        .instance_step_rate = 0,
-                    }},
-                    .num_vertex_buffers = 1,
+                    .vertex_buffer_descriptions =
+                        (SDL_GPUVertexBufferDescription[]) {
+                            {
+                                .slot = 0,
+                                .pitch = sizeof(ScOctreePoint),
+                                .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+                                .instance_step_rate = 0,
+                            },
+                            {
+                                .slot = 1,
+                                .pitch = sizeof(ScOctreeNodeInstance),
+                                .input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE,
+                                .instance_step_rate = 1,
+                            },
+                        },
+                    .num_vertex_buffers = 2,
                     .vertex_attributes =
                         (SDL_GPUVertexAttribute[]) {
                             {
                                 .location = 0,
                                 .buffer_slot = 0,
-                                .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_UINT,
                                 .offset = 0,
                             },
                             {
                                 .location = 1,
                                 .buffer_slot = 0,
                                 .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-                                .offset = sizeof(ScVector3),
+                                .offset = sizeof(uint32_t),
+                            },
+                            {
+                                .location = 2,
+                                .buffer_slot = 1,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_INT3,
+                                .offset = 0,
+                            },
+                            {
+                                .location = 3,
+                                .buffer_slot = 1,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_INT3,
+                                .offset = 3 * sizeof(int32_t),
                             },
                         },
-                    .num_vertex_attributes = 2,
+                    .num_vertex_attributes = 4,
                 },
             .primitive_type = SDL_GPU_PRIMITIVETYPE_POINTLIST,
             .rasterizer_state =
@@ -783,20 +662,29 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
                 },
         }
     );
-    app->line_pipeline = SDL_CreateGPUGraphicsPipeline(
+    app->bounds_pipeline = SDL_CreateGPUGraphicsPipeline(
         app->device,
         &(SDL_GPUGraphicsPipelineCreateInfo) {
-            .vertex_shader = app->vertex_shader,
-            .fragment_shader = app->fragment_shader,
+            .vertex_shader = bounds_vertex_shader,
+            .fragment_shader = bounds_fragment_shader,
             .vertex_input_state =
                 (SDL_GPUVertexInputState) {
-                    .vertex_buffer_descriptions = (SDL_GPUVertexBufferDescription[]) {{
-                        .slot = 0,
-                        .pitch = sizeof(ScVertex),
-                        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-                        .instance_step_rate = 0,
-                    }},
-                    .num_vertex_buffers = 1,
+                    .vertex_buffer_descriptions =
+                        (SDL_GPUVertexBufferDescription[]) {
+                            {
+                                .slot = 0,
+                                .pitch = sizeof(ScVertex),
+                                .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+                                .instance_step_rate = 0,
+                            },
+                            {
+                                .slot = 1,
+                                .pitch = sizeof(ScOctreeNodeInstance),
+                                .input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE,
+                                .instance_step_rate = 1,
+                            },
+                        },
+                    .num_vertex_buffers = 2,
                     .vertex_attributes =
                         (SDL_GPUVertexAttribute[]) {
                             {
@@ -811,8 +699,20 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
                                 .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
                                 .offset = sizeof(ScVector3),
                             },
+                            {
+                                .location = 2,
+                                .buffer_slot = 1,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_INT3,
+                                .offset = 0,
+                            },
+                            {
+                                .location = 3,
+                                .buffer_slot = 1,
+                                .format = SDL_GPU_VERTEXELEMENTFORMAT_INT3,
+                                .offset = 3 * sizeof(int32_t),
+                            },
                         },
-                    .num_vertex_attributes = 2,
+                    .num_vertex_attributes = 4,
                 },
             .primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST,
             .rasterizer_state =
@@ -856,7 +756,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         }
     );
     SC_SDL_ASSERT(app->point_pipeline != NULL);
-    SC_SDL_ASSERT(app->line_pipeline != NULL);
+    SC_SDL_ASSERT(app->bounds_pipeline != NULL);
+
+    // Release.
+    SDL_ReleaseGPUShader(app->device, point_vertex_shader);
+    SDL_ReleaseGPUShader(app->device, point_fragment_shader);
+    SDL_ReleaseGPUShader(app->device, bounds_vertex_shader);
+    SDL_ReleaseGPUShader(app->device, bounds_fragment_shader);
 
     return SDL_APP_CONTINUE;
 }
@@ -901,16 +807,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Camera.
     const float fov = sc_rad_from_deg(60.0f);
     const float aspect = (float)SC_WINDOW_WIDTH / (float)SC_WINDOW_HEIGHT;
-    const float mult = 100.0f;
+    const float mult = 70.0f;
     const float radius = 2.5f * mult;
     const float time = 1.0f + 0.000025f * SDL_GetTicks();
     const float camera_height = 2.0f * mult;
+    const float camera_z_offset = -700.0f;
     const float camera_origin_x = SDL_cosf(time * SC_PI * 3.0f / 2.0f) * radius;
     const float camera_origin_y = SDL_sinf(time * SC_PI * 3.0f / 2.0f) * radius;
     const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, 0.1f, 1000.0f);
     const ScMatrix4x4 view = sc_matrix4x4_look_at(
-        (ScVector3) {camera_origin_x, camera_origin_y, camera_height},
-        (ScVector3) {0.0f, 0.0f, 0.0f},
+        (ScVector3) {camera_origin_x, camera_origin_y, camera_height + camera_z_offset},
+        (ScVector3) {0.0f, 0.0f, camera_z_offset},
         (ScVector3) {0.0f, 0.0f, 1.0f}
     );
     const ScMatrix4x4 transform = sc_matrix4x4_multiply(view, perspective);
@@ -922,7 +829,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             .texture = swapchain,
             .mip_level = 0,
             .layer_or_depth_plane = 0,
-            .clear_color = (SDL_FColor) {0.05f, 0.05f, 0.05f, 1.0f},
+            .clear_color = (SDL_FColor) {0.025f, 0.025f, 0.025f, 1.0f},
             .load_op = SDL_GPU_LOADOP_CLEAR,
             .store_op = SDL_GPU_STOREOP_STORE,
             .resolve_texture = NULL,
@@ -944,6 +851,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     );
 
+    // Meta.
+    const uint32_t wanted_level = 10;
+
     // Draw - points.
     {
         SDL_BindGPUGraphicsPipeline(render_pass, app->point_pipeline);
@@ -951,29 +861,54 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         SDL_BindGPUVertexBuffers(
             render_pass,
             0,
-            &(SDL_GPUBufferBinding) {
-                .buffer = app->point_buffer,
-                .offset = 0,
+            (SDL_GPUBufferBinding[]) {
+                {
+                    .buffer = app->point_buffer,
+                    .offset = 0,
+                },
+                {
+                    .buffer = app->node_buffer,
+                    .offset = 0,
+                },
             },
-            1
+            2
         );
-        SDL_DrawGPUPrimitives(render_pass, app->data.point_count, 1, 0, 0);
+
+        for (uint32_t node_idx = 0; node_idx < (uint32_t)app->octree.node_count; node_idx++) {
+            ScOctreeNode* node = &app->octree.nodes[node_idx];
+            if (node->level == wanted_level) {
+                uint32_t vertex_count = (uint32_t)node->point_count;
+                uint32_t vertex_offset = (uint32_t)node->point_offset;
+                SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
+            }
+        }
     }
 
     // Draw - lines.
     {
-        SDL_BindGPUGraphicsPipeline(render_pass, app->line_pipeline);
+        SDL_BindGPUGraphicsPipeline(render_pass, app->bounds_pipeline);
         SDL_PushGPUVertexUniformData(cmd, 0, &transform, sizeof(transform));
         SDL_BindGPUVertexBuffers(
             render_pass,
             0,
-            &(SDL_GPUBufferBinding) {
-                .buffer = app->line_buffer,
-                .offset = 0,
+            (SDL_GPUBufferBinding[]) {
+                {
+                    .buffer = app->bounds_buffer,
+                    .offset = 0,
+                },
+                {
+                    .buffer = app->node_buffer,
+                    .offset = 0,
+                },
             },
-            1
+            2
         );
-        SDL_DrawGPUPrimitives(render_pass, app->line_vertex_count, 1, 0, 0);
+        for (uint32_t node_idx = 0; node_idx < (uint32_t)app->octree.node_count; node_idx++) {
+            ScOctreeNode* node = &app->octree.nodes[node_idx];
+            if (node->level == wanted_level) {
+                SDL_DrawGPUPrimitives(render_pass, app->bounds_vertex_count, 1, 0, node_idx);
+            }
+        }
     }
 
     // Render pass - end.
@@ -991,18 +926,16 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
 
     // Destroy.
     SDL_ReleaseGPUGraphicsPipeline(app->device, app->point_pipeline);
-    SDL_ReleaseGPUGraphicsPipeline(app->device, app->line_pipeline);
-    SDL_ReleaseGPUShader(app->device, app->vertex_shader);
-    SDL_ReleaseGPUShader(app->device, app->fragment_shader);
-    SDL_ReleaseGPUBuffer(app->device, app->line_buffer);
+    SDL_ReleaseGPUGraphicsPipeline(app->device, app->bounds_pipeline);
     SDL_ReleaseGPUBuffer(app->device, app->point_buffer);
+    SDL_ReleaseGPUBuffer(app->device, app->bounds_buffer);
     SDL_ReleaseGPUTexture(app->device, app->depth_stencil_texture);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);
     SDL_DestroyGPUDevice(app->device);
 
     // Free.
-    sc_data_free(&app->data);
+    sc_octree_free(&app->octree);
     free(app);
 
     // End.
