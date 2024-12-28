@@ -47,6 +47,16 @@ typedef struct bounds3f {
     vec3f mx;
 } bounds3f;
 
+typedef struct sphere3f {
+    vec3f o;
+    float r;
+} sphere3f;
+
+typedef struct plane3f {
+    vec3f n;
+    float d;
+} plane3f;
+
 //
 // Vector
 //
@@ -100,6 +110,24 @@ static vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
     };
 }
 
+static vec4f vec4f_add(vec4f lhs, vec4f rhs) {
+    return (vec4f) {
+        lhs.x + rhs.x,
+        lhs.y + rhs.y,
+        lhs.z + rhs.z,
+        lhs.w + rhs.w,
+    };
+}
+
+static vec4f vec4f_sub(vec4f lhs, vec4f rhs) {
+    return (vec4f) {
+        lhs.x - rhs.x,
+        lhs.y - rhs.y,
+        lhs.z - rhs.z,
+        lhs.w - rhs.w,
+    };
+}
+
 static vec3f vec3f_from_vec4f(vec4f vec) {
     return (vec3f) {
         vec.x,
@@ -124,6 +152,10 @@ static vec4f vec4f_scale(vec4f lhs, float rhs) {
         lhs.z * rhs,
         lhs.w * rhs,
     };
+}
+
+static float vec4f_dot(vec4f lhs, vec4f rhs) {
+    return (lhs.x * rhs.x) + (lhs.y * rhs.y) + (lhs.z * rhs.z) + (lhs.w * rhs.w);
 }
 
 //
@@ -202,6 +234,27 @@ static mat4f mat4f_scale(mat4f m, float s) {
     };
 }
 
+static mat4f mat4f_transpose(mat4f m) {
+    return (mat4f) {
+        m.m00,
+        m.m10,
+        m.m20,
+        m.m30,
+        m.m01,
+        m.m11,
+        m.m21,
+        m.m31,
+        m.m02,
+        m.m12,
+        m.m22,
+        m.m32,
+        m.m03,
+        m.m13,
+        m.m23,
+        m.m33,
+    };
+}
+
 static mat4f mat4f_inverse(mat4f m) {
     const float t0 = m.m22 * m.m33 - m.m32 * m.m23;
     const float t1 = m.m21 * m.m33 - m.m31 * m.m23;
@@ -244,7 +297,7 @@ static mat4f mat4f_inverse(mat4f m) {
 }
 
 static mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar) {
-    const float num = 1.0f / ((float)SDL_tanf(fov * 0.5f));
+    const float num = 1.0f / SDL_tanf(fov * 0.5f);
     const float a = num / aspect;
     const float b = num;
     const float c = zfar / (znear - zfar);
@@ -301,7 +354,7 @@ static mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
 }
 
 //
-// Bounds
+// Geometry
 //
 
 static vec3f bounds3f_extents(bounds3f bounds) {
@@ -317,5 +370,51 @@ static vec3f bounds3f_center(bounds3f bounds) {
         (bounds.mn.x + bounds.mx.x) * 0.5f,
         (bounds.mn.y + bounds.mx.y) * 0.5f,
         (bounds.mn.z + bounds.mx.z) * 0.5f,
+    };
+}
+
+static bool bounds3f_contains(bounds3f bounds, vec3f point) {
+    return point.x >= bounds.mn.x && point.y >= bounds.mn.y && point.z >= bounds.mn.z
+        && point.x <= bounds.mx.x && point.y <= bounds.mx.y && point.z <= bounds.mx.z;
+}
+
+static sphere3f sphere3f_from_bounds3f(bounds3f bounds) {
+    const vec3f origin = bounds3f_center(bounds);
+    const vec3f extents = bounds3f_extents(bounds);
+    const float radius = vec3f_len(extents) * 0.5f;
+    return (sphere3f) {
+        .o = origin,
+        .r = radius,
+    };
+}
+
+static plane3f plane3f_new(vec3f n, float d) {
+    return (plane3f) {
+        .n = n,
+        .d = d,
+    };
+}
+
+static plane3f plane3f_normalize(plane3f plane) {
+    const float length = vec3f_len(plane.n);
+    return (plane3f) {
+        .n = vec3f_scale(plane.n, 1.0f / length),
+        .d = plane.d / length,
+    };
+}
+
+static plane3f plane3f_from_vec4f(vec4f vec) {
+    return (plane3f) {
+        .n = (vec3f) {vec.x, vec.y, vec.z},
+        .d = vec.w,
+    };
+}
+
+static vec4f vec4f_from_plane3f(plane3f plane) {
+    return (vec4f) {
+        plane.n.x,
+        plane.n.y,
+        plane.n.z,
+        plane.d,
     };
 }
