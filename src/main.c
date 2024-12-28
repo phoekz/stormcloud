@@ -571,10 +571,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Camera.
     enum {
         MAIN,
-        AERIAL
+        AERIAL,
+        COUNT,
     };
-    SDL_GPUViewport viewports[2];
-    mat4f transforms[2];
+    SDL_GPUViewport viewports[COUNT];
+    mat4f transforms[COUNT];
+    mat4f inverse_transforms[COUNT];
     {
         // Common.
         const float time = (float)(SDL_GetTicks() / 1000.0);
@@ -601,6 +603,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
             const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
             transforms[MAIN] = mat4f_mul(perspective, view);
+            inverse_transforms[MAIN] = mat4f_inverse(transforms[MAIN]);
             viewports[MAIN] = (SDL_GPUViewport) {
                 .x = 0.0f,
                 .y = 0.0f,
@@ -610,18 +613,41 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                 .max_depth = 1.0f,
             };
 
-            sc_ddraw_line(&app->ddraw, camera_origin, camera_target, 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, camera_origin, camera_target, 0xff0000ff);
+
+            vec3f frustum_points[5] = {
+                {0.0f, 0.0f, 0.0f},
+                {-1.0f, -1.0f, 1.0f},
+                {1.0f, -1.0f, 1.0f},
+                {1.0f, 1.0f, 1.0f},
+                {-1.0f, 1.0f, 1.0f},
+            };
+            for (uint32_t i = 0; i < SC_COUNTOF(frustum_points); i++) {
+                vec4f v = vec4f_from_vec3f(frustum_points[i], 1.0f);
+                vec4f r = mat4f_mul_vec4f(inverse_transforms[MAIN], v);
+                vec4f h = vec4f_scale(r, 1.0f / r.w);
+                frustum_points[i] = vec3f_from_vec4f(h);
+            }
+            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[1], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[2], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[3], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[4], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[1], frustum_points[2], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[2], frustum_points[3], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[3], frustum_points[4], 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, frustum_points[4], frustum_points[1], 0xff00ff00);
         }
 
         // Aerial.
         {
-            const vec3f camera_offset = (vec3f) {0.0f, -500.0f, 1000.0f};
+            const vec3f camera_offset = (vec3f) {0.0f, 0.0f, 1000.0f};
             const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
             const vec3f camera_target = point_origin;
             const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
             const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
             const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
             transforms[AERIAL] = mat4f_mul(perspective, view);
+            inverse_transforms[AERIAL] = mat4f_inverse(transforms[AERIAL]);
             viewports[AERIAL] = (SDL_GPUViewport) {
                 .x = window_width,
                 .y = 0.0f,

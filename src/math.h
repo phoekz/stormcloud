@@ -31,6 +31,10 @@ typedef struct vec3f {
     float x, y, z;
 } vec3f;
 
+typedef struct vec4f {
+    float x, y, z, w;
+} vec4f;
+
 typedef struct mat4f {
     float m00, m01, m02, m03;
     float m10, m11, m12, m13;
@@ -63,6 +67,14 @@ static vec3f vec3f_sub(vec3f lhs, vec3f rhs) {
     };
 }
 
+static vec3f vec3f_scale(vec3f lhs, float rhs) {
+    return (vec3f) {
+        lhs.x * rhs,
+        lhs.y * rhs,
+        lhs.z * rhs,
+    };
+}
+
 static float vec3f_len(vec3f vec) {
     return SDL_sqrtf((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z));
 }
@@ -85,6 +97,32 @@ static vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
         lhs.y * rhs.z - rhs.y * lhs.z,
         -(lhs.x * rhs.z - rhs.x * lhs.z),
         lhs.x * rhs.y - rhs.x * lhs.y,
+    };
+}
+
+static vec3f vec3f_from_vec4f(vec4f vec) {
+    return (vec3f) {
+        vec.x,
+        vec.y,
+        vec.z,
+    };
+}
+
+static vec4f vec4f_from_vec3f(vec3f lhs, float rhs) {
+    return (vec4f) {
+        lhs.x,
+        lhs.y,
+        lhs.z,
+        rhs,
+    };
+}
+
+static vec4f vec4f_scale(vec4f lhs, float rhs) {
+    return (vec4f) {
+        lhs.x * rhs,
+        lhs.y * rhs,
+        lhs.z * rhs,
+        lhs.w * rhs,
     };
 }
 
@@ -113,6 +151,15 @@ static mat4f mat4f_identity() {
     };
 }
 
+static vec4f mat4f_mul_vec4f(mat4f m, vec4f v) {
+    return (vec4f) {
+        m.m00 * v.x + m.m10 * v.y + m.m20 * v.z + m.m30 * v.w,
+        m.m01 * v.x + m.m11 * v.y + m.m21 * v.z + m.m31 * v.w,
+        m.m02 * v.x + m.m12 * v.y + m.m22 * v.z + m.m32 * v.w,
+        m.m03 * v.x + m.m13 * v.y + m.m23 * v.z + m.m33 * v.w,
+    };
+}
+
 static mat4f mat4f_mul(mat4f lhs, mat4f rhs) {
     mat4f r;
     r.m00 = lhs.m00 * rhs.m00 + lhs.m10 * rhs.m01 + lhs.m20 * rhs.m02 + lhs.m30 * rhs.m03;
@@ -132,6 +179,68 @@ static mat4f mat4f_mul(mat4f lhs, mat4f rhs) {
     r.m32 = lhs.m02 * rhs.m30 + lhs.m12 * rhs.m31 + lhs.m22 * rhs.m32 + lhs.m32 * rhs.m33;
     r.m33 = lhs.m03 * rhs.m30 + lhs.m13 * rhs.m31 + lhs.m23 * rhs.m32 + lhs.m33 * rhs.m33;
     return r;
+}
+
+static mat4f mat4f_scale(mat4f m, float s) {
+    return (mat4f) {
+        m.m00 * s,
+        m.m01 * s,
+        m.m02 * s,
+        m.m03 * s,
+        m.m10 * s,
+        m.m11 * s,
+        m.m12 * s,
+        m.m13 * s,
+        m.m20 * s,
+        m.m21 * s,
+        m.m22 * s,
+        m.m23 * s,
+        m.m30 * s,
+        m.m31 * s,
+        m.m32 * s,
+        m.m33 * s,
+    };
+}
+
+static mat4f mat4f_inverse(mat4f m) {
+    const float t0 = m.m22 * m.m33 - m.m32 * m.m23;
+    const float t1 = m.m21 * m.m33 - m.m31 * m.m23;
+    const float t2 = m.m21 * m.m32 - m.m31 * m.m22;
+    const float t3 = m.m20 * m.m33 - m.m30 * m.m23;
+    const float t4 = m.m20 * m.m32 - m.m30 * m.m22;
+    const float t5 = m.m20 * m.m31 - m.m30 * m.m21;
+    const float t6 = m.m12 * m.m33 - m.m32 * m.m13;
+    const float t7 = m.m11 * m.m33 - m.m31 * m.m13;
+    const float t8 = m.m11 * m.m32 - m.m31 * m.m12;
+    const float t9 = m.m12 * m.m23 - m.m22 * m.m13;
+    const float t10 = m.m11 * m.m23 - m.m21 * m.m13;
+    const float t11 = m.m11 * m.m22 - m.m21 * m.m12;
+    const float t12 = m.m10 * m.m33 - m.m30 * m.m13;
+    const float t13 = m.m10 * m.m32 - m.m30 * m.m12;
+    const float t14 = m.m10 * m.m23 - m.m20 * m.m13;
+    const float t15 = m.m10 * m.m22 - m.m20 * m.m12;
+    const float t16 = m.m10 * m.m31 - m.m30 * m.m11;
+    const float t17 = m.m10 * m.m21 - m.m20 * m.m11;
+
+    mat4f r;
+    r.m00 = m.m11 * t0 - m.m12 * t1 + m.m13 * t2;
+    r.m01 = -(m.m01 * t0 - m.m02 * t1 + m.m03 * t2);
+    r.m02 = m.m01 * t6 - m.m02 * t7 + m.m03 * t8;
+    r.m03 = -(m.m01 * t9 - m.m02 * t10 + m.m03 * t11);
+    r.m10 = -(m.m10 * t0 - m.m12 * t3 + m.m13 * t4);
+    r.m11 = m.m00 * t0 - m.m02 * t3 + m.m03 * t4;
+    r.m12 = -(m.m00 * t6 - m.m02 * t12 + m.m03 * t13);
+    r.m13 = m.m00 * t9 - m.m02 * t14 + m.m03 * t15;
+    r.m20 = m.m10 * t1 - m.m11 * t3 + m.m13 * t5;
+    r.m21 = -(m.m00 * t1 - m.m01 * t3 + m.m03 * t5);
+    r.m22 = m.m00 * t7 - m.m01 * t12 + m.m03 * t16;
+    r.m23 = -(m.m00 * t10 - m.m01 * t14 + m.m03 * t17);
+    r.m30 = -(m.m10 * t2 - m.m11 * t4 + m.m12 * t5);
+    r.m31 = m.m00 * t2 - m.m01 * t4 + m.m02 * t5;
+    r.m32 = -(m.m00 * t8 - m.m01 * t13 + m.m02 * t16);
+    r.m33 = m.m00 * t11 - m.m01 * t15 + m.m02 * t17;
+    const float det = 1.0f / (m.m00 * r.m00 + m.m01 * r.m10 + m.m02 * r.m20 + m.m03 * r.m30);
+    return mat4f_scale(r, det);
 }
 
 static mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar) {
