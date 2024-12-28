@@ -48,9 +48,6 @@ struct fs_output {
 
 fs_output fs_main(vs_output input) {
     fs_output output;
-    output.color.r = input.color.r;
-    output.color.g = input.color.g;
-    output.color.b = input.color.b;
-    output.color.a = input.color.a;
+    output.color = input.color;
     return output;
 }

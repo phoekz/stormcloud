@@ -40,6 +40,7 @@ endif()
 set(shader_files
     ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/point.hlsl
     ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/bounds.hlsl
+    ${CMAKE_SOURCE_DIR}/src/shaders/hlsl/ddraw.hlsl
 )
 
 foreach(shader_file ${shader_files})
