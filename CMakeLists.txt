@@ -71,7 +71,7 @@ add_executable(stormcloud
     src/octree.h
 )
 add_dependencies(stormcloud shaders)
-target_compile_options(stormcloud PRIVATE /W4 /WX)
+target_compile_options(stormcloud PRIVATE /MP /W4 /WX /Oi /Ot /Ob3 /arch:AVX2)
 target_link_libraries(stormcloud PRIVATE libzstd_static ${SDL3_SOURCE_DIR}/lib/x64/SDL3.lib)
 target_include_directories(stormcloud PRIVATE ${SDL3_SOURCE_DIR}/include)
 set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
