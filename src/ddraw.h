@@ -1,5 +1,5 @@
 typedef struct ScDebugDrawVertex {
-    ScVector3 position;
+    vec3f position;
     uint32_t color;
 } ScDebugDrawVertex;
 
@@ -13,7 +13,7 @@ typedef struct ScDebugRenderInfo {
     SDL_GPUCommandBuffer* command_buffer;
     SDL_GPURenderPass* render_pass;
     SDL_GPUViewport viewport;
-    ScMatrix4x4 transform;
+    mat4f transform;
 } ScDebugRenderInfo;
 
 typedef struct ScDebugDraw {
@@ -99,7 +99,7 @@ sc_ddraw_new(SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info, Sc
                                 .location = 1,
                                 .buffer_slot = 0,
                                 .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-                                .offset = sizeof(ScVector3),
+                                .offset = sizeof(vec3f),
                             },
                         },
                     .num_vertex_attributes = 2,
@@ -151,7 +151,7 @@ sc_ddraw_new(SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info, Sc
     SDL_ReleaseGPUShader(device, fragment_shader);
 }
 
-static void sc_ddraw_line(ScDebugDraw* ddraw, ScVector3 a, ScVector3 b, uint32_t color) {
+static void sc_ddraw_line(ScDebugDraw* ddraw, vec3f a, vec3f b, uint32_t color) {
     // Validation.
     SC_ASSERT(ddraw->line_count + 2 <= ddraw->line_capacity);
 

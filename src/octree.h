@@ -36,7 +36,7 @@ typedef struct ScOctree {
     uint64_t node_count;
     ScOctreePoint* points;
     uint64_t point_count;
-    ScBounds3 point_bounds;
+    bounds3f point_bounds;
 } ScOctree;
 
 static void sc_octree_new(ScOctree* octree, const char* file_path) {
@@ -54,21 +54,21 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     uint64_t point_count;
     fread(&point_count, 1, sizeof(point_count), file);
     SC_LOG_INFO("Point count: %llu", point_count);
-    ScBounds3 point_bounds;
+    bounds3f point_bounds;
     fread(&point_bounds, 1, sizeof(point_bounds), file);
-    ScVector3 point_bounds_extents = sc_bounds3_extents(point_bounds);
-    ScVector3 point_bounds_center = sc_bounds3_center(point_bounds);
+    vec3f point_bounds_extents = bounds3f_extents(point_bounds);
+    vec3f point_bounds_center = bounds3f_center(point_bounds);
     SC_LOG_INFO(
         "Point bounds min: %f, %f, %f",
-        point_bounds.min.x,
-        point_bounds.min.y,
-        point_bounds.min.z
+        point_bounds.mn.x,
+        point_bounds.mn.y,
+        point_bounds.mn.z
     );
     SC_LOG_INFO(
         "Point bounds max: %f, %f, %f",
-        point_bounds.max.x,
-        point_bounds.max.y,
-        point_bounds.max.z
+        point_bounds.mx.x,
+        point_bounds.mx.y,
+        point_bounds.mx.z
     );
     SC_LOG_INFO(
         "Point bounds extents: %f, %f, %f",

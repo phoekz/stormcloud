@@ -189,7 +189,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     // Vertex buffer - lines.
     typedef struct ScVertex {
-        ScVector3 position;
+        vec3f position;
         uint32_t color;
     } ScVertex;
     {
@@ -211,34 +211,34 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             }
         );
         ScVertex* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
-        const ScVector3 mn = {0.0f, 0.0f, 0.0f};
-        const ScVector3 mx = {1.0f, 1.0f, 1.0f};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        const vec3f mn = {0.0f, 0.0f, 0.0f};
+        const vec3f mx = {1.0f, 1.0f, 1.0f};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
 
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
 
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
-        *data++ = (ScVertex) {.position = (ScVector3) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mn.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mx.x, mx.y, mx.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mn.z}, .color = 0xffffffff};
+        *data++ = (ScVertex) {.position = (vec3f) {mn.x, mx.y, mx.z}, .color = 0xffffffff};
         SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
         SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
@@ -427,7 +427,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
                                 .location = 1,
                                 .buffer_slot = 0,
                                 .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-                                .offset = sizeof(ScVector3),
+                                .offset = sizeof(vec3f),
                             },
                             {
                                 .location = 2,
@@ -574,33 +574,33 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         AERIAL
     };
     SDL_GPUViewport viewports[2];
-    ScMatrix4x4 transforms[2];
+    mat4f transforms[2];
     {
         // Common.
         const float time = (float)(SDL_GetTicks() / 1000.0);
-        const float fov = sc_rad_from_deg(60.0f);
+        const float fov = rad_from_deg(60.0f);
         const float window_width = (float)(SC_WINDOW_WIDTH / 2);
         const float window_height = (float)SC_WINDOW_HEIGHT;
         const float aspect = window_width / window_height;
         const float z_near = 0.1f;
         const float z_far = 1000.0f;
-        const ScVector3 point_origin = sc_bounds3_center(app->octree.point_bounds);
+        const vec3f point_origin = bounds3f_center(app->octree.point_bounds);
 
         // Main.
         {
             const float camera_turn_speed = 0.25f;
             const float camera_offset_radius = 500.0f;
-            const ScVector3 camera_offset = (ScVector3) {
+            const vec3f camera_offset = (vec3f) {
                 camera_offset_radius * SDL_cosf(camera_turn_speed * time),
                 camera_offset_radius * SDL_sinf(camera_turn_speed * time),
                 camera_offset_radius * 0.5f,
             };
-            const ScVector3 camera_origin = sc_vector3_add(point_origin, camera_offset);
-            const ScVector3 camera_target = point_origin;
-            const ScVector3 camera_up = (ScVector3) {0.0f, 0.0f, 1.0f};
-            const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, z_near, z_far);
-            const ScMatrix4x4 view = sc_matrix4x4_look_at(camera_origin, camera_target, camera_up);
-            transforms[MAIN] = sc_matrix4x4_multiply(view, perspective);
+            const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
+            const vec3f camera_target = point_origin;
+            const vec3f camera_up = (vec3f) {0.0f, 0.0f, 1.0f};
+            const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
+            const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
+            transforms[MAIN] = mat4f_mul(perspective, view);
             viewports[MAIN] = (SDL_GPUViewport) {
                 .x = 0.0f,
                 .y = 0.0f,
@@ -615,13 +615,13 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
         // Aerial.
         {
-            const ScVector3 camera_offset = (ScVector3) {0.0f, -500.0f, 1000.0f};
-            const ScVector3 camera_origin = sc_vector3_add(point_origin, camera_offset);
-            const ScVector3 camera_target = point_origin;
-            const ScVector3 camera_up = (ScVector3) {0.0f, 1.0f, 0.0f};
-            const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, z_near, z_far);
-            const ScMatrix4x4 view = sc_matrix4x4_look_at(camera_origin, camera_target, camera_up);
-            transforms[AERIAL] = sc_matrix4x4_multiply(view, perspective);
+            const vec3f camera_offset = (vec3f) {0.0f, -500.0f, 1000.0f};
+            const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
+            const vec3f camera_target = point_origin;
+            const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
+            const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
+            const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
+            transforms[AERIAL] = mat4f_mul(perspective, view);
             viewports[AERIAL] = (SDL_GPUViewport) {
                 .x = window_width,
                 .y = 0.0f,
