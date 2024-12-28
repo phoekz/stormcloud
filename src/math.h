@@ -15,11 +15,11 @@
 
 #define SC_PI SDL_PI_F
 
-static float rad_from_deg(float deg) {
+static SC_INLINE float rad_from_deg(float deg) {
     return deg * (SC_PI / 180.0f);
 }
 
-static float deg_from_rad(float rad) {
+static SC_INLINE float deg_from_rad(float rad) {
     return rad * (180.0f / SC_PI);
 }
 
@@ -61,7 +61,7 @@ typedef struct plane3f {
 // Vector
 //
 
-static vec3f vec3f_add(vec3f lhs, vec3f rhs) {
+static SC_INLINE vec3f vec3f_add(vec3f lhs, vec3f rhs) {
     return (vec3f) {
         lhs.x + rhs.x,
         lhs.y + rhs.y,
@@ -69,7 +69,7 @@ static vec3f vec3f_add(vec3f lhs, vec3f rhs) {
     };
 }
 
-static vec3f vec3f_sub(vec3f lhs, vec3f rhs) {
+static SC_INLINE vec3f vec3f_sub(vec3f lhs, vec3f rhs) {
     return (vec3f) {
         lhs.x - rhs.x,
         lhs.y - rhs.y,
@@ -77,7 +77,7 @@ static vec3f vec3f_sub(vec3f lhs, vec3f rhs) {
     };
 }
 
-static vec3f vec3f_scale(vec3f lhs, float rhs) {
+static SC_INLINE vec3f vec3f_scale(vec3f lhs, float rhs) {
     return (vec3f) {
         lhs.x * rhs,
         lhs.y * rhs,
@@ -85,11 +85,11 @@ static vec3f vec3f_scale(vec3f lhs, float rhs) {
     };
 }
 
-static float vec3f_len(vec3f vec) {
+static SC_INLINE float vec3f_len(vec3f vec) {
     return SDL_sqrtf((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z));
 }
 
-static vec3f vec3f_normalize(vec3f vec) {
+static SC_INLINE vec3f vec3f_normalize(vec3f vec) {
     const float length = vec3f_len(vec);
     return (vec3f) {
         vec.x / length,
@@ -98,11 +98,11 @@ static vec3f vec3f_normalize(vec3f vec) {
     };
 }
 
-static float vec3f_dot(vec3f lhs, vec3f rhs) {
+static SC_INLINE float vec3f_dot(vec3f lhs, vec3f rhs) {
     return (lhs.x * rhs.x) + (lhs.y * rhs.y) + (lhs.z * rhs.z);
 }
 
-static vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
+static SC_INLINE vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
     return (vec3f) {
         lhs.y * rhs.z - rhs.y * lhs.z,
         -(lhs.x * rhs.z - rhs.x * lhs.z),
@@ -110,7 +110,7 @@ static vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
     };
 }
 
-static vec4f vec4f_add(vec4f lhs, vec4f rhs) {
+static SC_INLINE vec4f vec4f_add(vec4f lhs, vec4f rhs) {
     return (vec4f) {
         lhs.x + rhs.x,
         lhs.y + rhs.y,
@@ -119,7 +119,7 @@ static vec4f vec4f_add(vec4f lhs, vec4f rhs) {
     };
 }
 
-static vec4f vec4f_sub(vec4f lhs, vec4f rhs) {
+static SC_INLINE vec4f vec4f_sub(vec4f lhs, vec4f rhs) {
     return (vec4f) {
         lhs.x - rhs.x,
         lhs.y - rhs.y,
@@ -128,7 +128,7 @@ static vec4f vec4f_sub(vec4f lhs, vec4f rhs) {
     };
 }
 
-static vec3f vec3f_from_vec4f(vec4f vec) {
+static SC_INLINE vec3f vec3f_from_vec4f(vec4f vec) {
     return (vec3f) {
         vec.x,
         vec.y,
@@ -136,7 +136,7 @@ static vec3f vec3f_from_vec4f(vec4f vec) {
     };
 }
 
-static vec4f vec4f_from_vec3f(vec3f lhs, float rhs) {
+static SC_INLINE vec4f vec4f_from_vec3f(vec3f lhs, float rhs) {
     return (vec4f) {
         lhs.x,
         lhs.y,
@@ -145,7 +145,7 @@ static vec4f vec4f_from_vec3f(vec3f lhs, float rhs) {
     };
 }
 
-static vec4f vec4f_scale(vec4f lhs, float rhs) {
+static SC_INLINE vec4f vec4f_scale(vec4f lhs, float rhs) {
     return (vec4f) {
         lhs.x * rhs,
         lhs.y * rhs,
@@ -154,7 +154,7 @@ static vec4f vec4f_scale(vec4f lhs, float rhs) {
     };
 }
 
-static float vec4f_dot(vec4f lhs, vec4f rhs) {
+static SC_INLINE float vec4f_dot(vec4f lhs, vec4f rhs) {
     return (lhs.x * rhs.x) + (lhs.y * rhs.y) + (lhs.z * rhs.z) + (lhs.w * rhs.w);
 }
 
@@ -162,7 +162,7 @@ static float vec4f_dot(vec4f lhs, vec4f rhs) {
 // Matrix
 //
 
-static mat4f mat4f_identity() {
+static SC_INLINE mat4f mat4f_identity() {
     return (mat4f) {
         1.0f,
         0.0f,
@@ -183,7 +183,7 @@ static mat4f mat4f_identity() {
     };
 }
 
-static vec4f mat4f_mul_vec4f(mat4f m, vec4f v) {
+static SC_INLINE vec4f mat4f_mul_vec4f(mat4f m, vec4f v) {
     return (vec4f) {
         m.m00 * v.x + m.m10 * v.y + m.m20 * v.z + m.m30 * v.w,
         m.m01 * v.x + m.m11 * v.y + m.m21 * v.z + m.m31 * v.w,
@@ -192,7 +192,7 @@ static vec4f mat4f_mul_vec4f(mat4f m, vec4f v) {
     };
 }
 
-static mat4f mat4f_mul(mat4f lhs, mat4f rhs) {
+static SC_INLINE mat4f mat4f_mul(mat4f lhs, mat4f rhs) {
     mat4f r;
     r.m00 = lhs.m00 * rhs.m00 + lhs.m10 * rhs.m01 + lhs.m20 * rhs.m02 + lhs.m30 * rhs.m03;
     r.m01 = lhs.m01 * rhs.m00 + lhs.m11 * rhs.m01 + lhs.m21 * rhs.m02 + lhs.m31 * rhs.m03;
@@ -213,7 +213,7 @@ static mat4f mat4f_mul(mat4f lhs, mat4f rhs) {
     return r;
 }
 
-static mat4f mat4f_scale(mat4f m, float s) {
+static SC_INLINE mat4f mat4f_scale(mat4f m, float s) {
     return (mat4f) {
         m.m00 * s,
         m.m01 * s,
@@ -234,7 +234,7 @@ static mat4f mat4f_scale(mat4f m, float s) {
     };
 }
 
-static mat4f mat4f_transpose(mat4f m) {
+static SC_INLINE mat4f mat4f_transpose(mat4f m) {
     return (mat4f) {
         m.m00,
         m.m10,
@@ -255,7 +255,7 @@ static mat4f mat4f_transpose(mat4f m) {
     };
 }
 
-static mat4f mat4f_inverse(mat4f m) {
+static SC_INLINE mat4f mat4f_inverse(mat4f m) {
     const float t0 = m.m22 * m.m33 - m.m32 * m.m23;
     const float t1 = m.m21 * m.m33 - m.m31 * m.m23;
     const float t2 = m.m21 * m.m32 - m.m31 * m.m22;
@@ -296,7 +296,7 @@ static mat4f mat4f_inverse(mat4f m) {
     return mat4f_scale(r, det);
 }
 
-static mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar) {
+static SC_INLINE mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar) {
     const float num = 1.0f / SDL_tanf(fov * 0.5f);
     const float a = num / aspect;
     const float b = num;
@@ -322,7 +322,7 @@ static mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar)
     };
 }
 
-static mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
+static SC_INLINE mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
     const vec3f fwd = vec3f_normalize((vec3f) {
         origin.x - target.x,
         origin.y - target.y,
@@ -357,7 +357,7 @@ static mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
 // Geometry
 //
 
-static vec3f bounds3f_extents(bounds3f bounds) {
+static SC_INLINE vec3f bounds3f_extents(bounds3f bounds) {
     return (vec3f) {
         bounds.mx.x - bounds.mn.x,
         bounds.mx.y - bounds.mn.y,
@@ -365,7 +365,7 @@ static vec3f bounds3f_extents(bounds3f bounds) {
     };
 }
 
-static vec3f bounds3f_center(bounds3f bounds) {
+static SC_INLINE vec3f bounds3f_center(bounds3f bounds) {
     return (vec3f) {
         (bounds.mn.x + bounds.mx.x) * 0.5f,
         (bounds.mn.y + bounds.mx.y) * 0.5f,
@@ -373,12 +373,12 @@ static vec3f bounds3f_center(bounds3f bounds) {
     };
 }
 
-static bool bounds3f_contains(bounds3f bounds, vec3f point) {
+static SC_INLINE bool bounds3f_contains(bounds3f bounds, vec3f point) {
     return point.x >= bounds.mn.x && point.y >= bounds.mn.y && point.z >= bounds.mn.z
         && point.x <= bounds.mx.x && point.y <= bounds.mx.y && point.z <= bounds.mx.z;
 }
 
-static sphere3f sphere3f_from_bounds3f(bounds3f bounds) {
+static SC_INLINE sphere3f sphere3f_from_bounds3f(bounds3f bounds) {
     const vec3f origin = bounds3f_center(bounds);
     const vec3f extents = bounds3f_extents(bounds);
     const float radius = vec3f_len(extents) * 0.5f;
@@ -388,14 +388,14 @@ static sphere3f sphere3f_from_bounds3f(bounds3f bounds) {
     };
 }
 
-static plane3f plane3f_new(vec3f n, float d) {
+static SC_INLINE plane3f plane3f_new(vec3f n, float d) {
     return (plane3f) {
         .n = n,
         .d = d,
     };
 }
 
-static plane3f plane3f_normalize(plane3f plane) {
+static SC_INLINE plane3f plane3f_normalize(plane3f plane) {
     const float length = vec3f_len(plane.n);
     return (plane3f) {
         .n = vec3f_scale(plane.n, 1.0f / length),
@@ -403,14 +403,14 @@ static plane3f plane3f_normalize(plane3f plane) {
     };
 }
 
-static plane3f plane3f_from_vec4f(vec4f vec) {
+static SC_INLINE plane3f plane3f_from_vec4f(vec4f vec) {
     return (plane3f) {
         .n = (vec3f) {vec.x, vec.y, vec.z},
         .d = vec.w,
     };
 }
 
-static vec4f vec4f_from_plane3f(plane3f plane) {
+static SC_INLINE vec4f vec4f_from_plane3f(plane3f plane) {
     return (vec4f) {
         plane.n.x,
         plane.n.y,

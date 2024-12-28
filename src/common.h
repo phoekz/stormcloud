@@ -16,6 +16,7 @@
         abort();        \
     }
 #define SC_COUNTOF(arr) (sizeof(arr) / sizeof(arr[0]))
+#define SC_INLINE __forceinline
 #define SC_LOG_INFO(fmt, ...) SDL_Log(fmt, ##__VA_ARGS__)
 #define SC_LOG_ERROR(fmt, ...) SDL_LogError(SDL_LOG_CATEGORY_ERROR, fmt, ##__VA_ARGS__)
 #define SC_SDL_ASSERT(expr)                            \
