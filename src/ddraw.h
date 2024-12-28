@@ -151,6 +151,13 @@ sc_ddraw_new(SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info, Sc
     SDL_ReleaseGPUShader(device, fragment_shader);
 }
 
+static void sc_ddraw_free(SDL_GPUDevice* device, ScDebugDraw* ddraw) {
+    SDL_ReleaseGPUGraphicsPipeline(device, ddraw->line_pipeline);
+    SDL_ReleaseGPUBuffer(device, ddraw->line_buffer);
+    SDL_ReleaseGPUTransferBuffer(device, ddraw->line_transfer_buffer);
+    free(ddraw->lines);
+}
+
 static void sc_ddraw_line(ScDebugDraw* ddraw, vec3f a, vec3f b, uint32_t color) {
     // Validation.
     SC_ASSERT(ddraw->line_count + 2 <= ddraw->line_capacity);
@@ -223,11 +230,4 @@ static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) 
 
     // Reset.
     ddraw->line_count = 0;
-}
-
-static void sc_ddraw_free(SDL_GPUDevice* device, ScDebugDraw* ddraw) {
-    SDL_ReleaseGPUGraphicsPipeline(device, ddraw->line_pipeline);
-    SDL_ReleaseGPUBuffer(device, ddraw->line_buffer);
-    SDL_ReleaseGPUTransferBuffer(device, ddraw->line_transfer_buffer);
-    free(ddraw->lines);
 }
