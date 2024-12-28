@@ -49,6 +49,19 @@ typedef struct ScMatrix4x4 {
     float m41, m42, m43, m44;
 } ScMatrix4x4;
 
+typedef struct ScBounds3 {
+    ScVector3 min;
+    ScVector3 max;
+} ScBounds3;
+
+ScVector3 sc_vector3_add(ScVector3 lhs, ScVector3 rhs) {
+    return (ScVector3) {
+        lhs.x + rhs.x,
+        lhs.y + rhs.y,
+        lhs.z + rhs.z,
+    };
+}
+
 ScVector3 sc_vector3_sub(ScVector3 lhs, ScVector3 rhs) {
     return (ScVector3) {
         lhs.x - rhs.x,
@@ -141,6 +154,14 @@ ScMatrix4x4 sc_matrix4x4_look_at(ScVector3 origin, ScVector3 target, ScVector3 u
     // clang-format on
 }
 
+ScVector3 sc_bounds3_center(ScBounds3 bounds) {
+    return (ScVector3) {
+        (bounds.min.x + bounds.max.x) * 0.5f,
+        (bounds.min.y + bounds.max.y) * 0.5f,
+        (bounds.min.z + bounds.max.z) * 0.5f,
+    };
+}
+
 //
 // Stormcloud - Data.
 //
@@ -183,6 +204,7 @@ typedef struct ScOctree {
     uint64_t node_count;
     ScOctreePoint* points;
     uint64_t point_count;
+    ScBounds3 point_bounds;
 } ScOctree;
 
 static void sc_octree_load(ScOctree* octree, const char* file_path) {
@@ -200,6 +222,20 @@ static void sc_octree_load(ScOctree* octree, const char* file_path) {
     uint64_t point_count;
     fread(&point_count, 1, sizeof(point_count), file);
     SC_LOG_INFO("Point count: %llu", point_count);
+    ScBounds3 point_bounds;
+    fread(&point_bounds, 1, sizeof(point_bounds), file);
+    SC_LOG_INFO(
+        "Point bounds min: %f, %f, %f",
+        point_bounds.min.x,
+        point_bounds.min.y,
+        point_bounds.min.z
+    );
+    SC_LOG_INFO(
+        "Point bounds max: %f, %f, %f",
+        point_bounds.max.x,
+        point_bounds.max.y,
+        point_bounds.max.z
+    );
 
     // Load nodes.
     ScOctreeNode* nodes = malloc(node_count * sizeof(ScOctreeNode));
@@ -229,6 +265,7 @@ static void sc_octree_load(ScOctree* octree, const char* file_path) {
     octree->node_count = node_count;
     octree->points = points;
     octree->point_count = point_count;
+    octree->point_bounds = point_bounds;
 
     // Timing.
     const uint64_t end_time_ns = SDL_GetTicksNS();
@@ -812,19 +849,20 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Camera.
     const float fov = sc_rad_from_deg(60.0f);
     const float aspect = (float)SC_WINDOW_WIDTH / (float)SC_WINDOW_HEIGHT;
-    const float mult = 70.0f;
-    const float radius = 2.5f * mult;
-    const float time = 1.0f + 0.000025f * SDL_GetTicks();
-    const float camera_height = 2.0f * mult;
-    const float camera_z_offset = -700.0f;
-    const float camera_origin_x = SDL_cosf(time * SC_PI * 3.0f / 2.0f) * radius;
-    const float camera_origin_y = SDL_sinf(time * SC_PI * 3.0f / 2.0f) * radius;
+    const float time = (float)(SDL_GetTicks() / 1000.0);
+    const float camera_turn_speed = 0.25f;
+    const float camera_offset_radius = 250.0f;
+    const ScVector3 camera_offset = (ScVector3) {
+        camera_offset_radius * SDL_cosf(camera_turn_speed * time),
+        camera_offset_radius * SDL_sinf(camera_turn_speed * time),
+        camera_offset_radius,
+    };
+    const ScVector3 point_origin = sc_bounds3_center(app->octree.point_bounds);
+    const ScVector3 camera_origin = sc_vector3_add(point_origin, camera_offset);
+    const ScVector3 camera_target = point_origin;
+    const ScVector3 camera_up = (ScVector3) {0.0f, 0.0f, 1.0f};
     const ScMatrix4x4 perspective = sc_matrix4x4_perspective(fov, aspect, 0.1f, 1000.0f);
-    const ScMatrix4x4 view = sc_matrix4x4_look_at(
-        (ScVector3) {camera_origin_x, camera_origin_y, camera_height + camera_z_offset},
-        (ScVector3) {0.0f, 0.0f, camera_z_offset},
-        (ScVector3) {0.0f, 0.0f, 1.0f}
-    );
+    const ScMatrix4x4 view = sc_matrix4x4_look_at(camera_origin, camera_target, camera_up);
     const ScMatrix4x4 transform = sc_matrix4x4_multiply(view, perspective);
 
     // Render pass - begin.
