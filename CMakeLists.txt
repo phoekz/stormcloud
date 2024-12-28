@@ -62,7 +62,14 @@ add_custom_target(shaders DEPENDS ${vert_files} ${frag_files})
 #
 # Stormcloud
 #
-add_executable(stormcloud src/main.c)
+add_executable(stormcloud
+    src/main.c
+    src/common.h
+    src/ddraw.h
+    src/gpu.h
+    src/math.h
+    src/octree.h
+)
 add_dependencies(stormcloud shaders)
 target_compile_options(stormcloud PRIVATE /W4 /WX)
 target_link_libraries(stormcloud PRIVATE libzstd_static ${SDL3_SOURCE_DIR}/lib/x64/SDL3.lib)
