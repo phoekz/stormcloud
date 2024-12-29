@@ -1,5 +1,5 @@
 static bool
-sc_frustum_box_test(const plane3f frustum_planes[6], const vec3f frustum_corners[8], bounds3f box) {
+sc_frustum_box_test(const plane3f frustum_planes[6], const vec3f frustum_corners[8], box3f box) {
     // From: https://iquilezles.org/articles/frustumcorrect/
 
     // Init.

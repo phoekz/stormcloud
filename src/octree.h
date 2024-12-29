@@ -48,7 +48,7 @@ typedef struct ScOctree {
 
     ScOctreePoint* points;
     uint64_t point_count;
-    bounds3f point_bounds;
+    box3f point_bounds;
 
     uint32_t* node_traverse;
     uint32_t node_traverse_count;
@@ -65,7 +65,7 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     SC_ASSERT(strncmp(magic, "TOKYOOCT", sizeof(magic)) == 0);
     fread(&octree->node_count, 1, sizeof(uint64_t), file);
     fread(&octree->point_count, 1, sizeof(uint64_t), file);
-    fread(&octree->point_bounds, 1, sizeof(bounds3f), file);
+    fread(&octree->point_bounds, 1, sizeof(box3f), file);
     fread(&octree->unit_world_scale, 1, sizeof(float), file);
     fread(&octree->node_unit_count, 1, sizeof(float), file);
     fread(&octree->node_world_scale, 1, sizeof(float), file);
@@ -108,8 +108,8 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
 
     // Logging.
     // clang-format off
-    const vec3f point_bounds_extents = bounds3f_extents(octree->point_bounds);
-    const vec3f point_bounds_center = bounds3f_center(octree->point_bounds);
+    const vec3f point_bounds_extents = box3f_extents(octree->point_bounds);
+    const vec3f point_bounds_center = box3f_center(octree->point_bounds);
     SC_LOG_INFO("Node count: %llu", octree->node_count);
     SC_LOG_INFO("Point count: %llu", octree->point_count);
     SC_LOG_INFO("Point bounds:");
@@ -216,7 +216,7 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
             node_world_scale * (float)curr_node->max_y,
             node_world_scale * (float)curr_node->max_z,
         };
-        const bounds3f curr_bounds = (bounds3f) {
+        const box3f curr_bounds = (box3f) {
             .mn = curr_bounds_mn,
             .mx = curr_bounds_mx,
         };
@@ -233,7 +233,7 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
         }
 
         // Calculate unit bounding sphere.
-        const sphere3f curr_sphere = sphere3f_from_bounds3f(curr_bounds);
+        const sphere3f curr_sphere = sphere3f_from_box3f(curr_bounds);
         const sphere3f unit_sphere = (sphere3f) {
             .o = curr_sphere.o,
             .r = curr_sphere.r / node_unit_count,

@@ -15,6 +15,10 @@
 
 #define SC_WINDOW_WIDTH 1920
 #define SC_WINDOW_HEIGHT 1200
+#define SC_SWAPCHAIN_PRESENT_MODE SDL_GPU_PRESENTMODE_VSYNC
+#define SC_SWAPCHAIN_COMPOSITION SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR
+#define SC_SWAPCHAIN_COLOR_FORMAT SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB
+#define SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT SDL_GPU_TEXTUREFORMAT_D32_FLOAT
 
 typedef struct ScApp {
     ScOctree octree;
@@ -67,29 +71,39 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         SC_LOG_ERROR("SDL_ClaimWindowForGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    const SDL_GPUPresentMode present_mode = SDL_GPU_PRESENTMODE_VSYNC;
-    const SDL_GPUSwapchainComposition composition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR;
-    if (!SDL_WindowSupportsGPUPresentMode(app->device, app->window, present_mode)) {
+    if (!SDL_WindowSupportsGPUPresentMode(app->device, app->window, SC_SWAPCHAIN_PRESENT_MODE)) {
         SC_LOG_ERROR("SDL_WindowSupportsGPUPresentMode failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    if (!SDL_WindowSupportsGPUSwapchainComposition(app->device, app->window, composition)) {
+    if (!SDL_WindowSupportsGPUSwapchainComposition(
+            app->device,
+            app->window,
+            SC_SWAPCHAIN_COMPOSITION
+        )) {
         SC_LOG_ERROR("SDL_WindowSupportsGPUSwapchainComposition failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    if (!SDL_SetGPUSwapchainParameters(app->device, app->window, composition, present_mode)) {
+    if (!SDL_SetGPUSwapchainParameters(
+            app->device,
+            app->window,
+            SC_SWAPCHAIN_COMPOSITION,
+            SC_SWAPCHAIN_PRESENT_MODE
+        )) {
         SC_LOG_ERROR("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (SDL_GetGPUSwapchainTextureFormat(app->device, app->window) != SC_SWAPCHAIN_COLOR_FORMAT) {
+        SC_LOG_ERROR("SDL_GetGPUSwapchainTextureFormat failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
     // Depth stencil texture.
-    SDL_GPUTextureFormat depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     {
         app->depth_stencil_texture = SDL_CreateGPUTexture(
             app->device,
             &(SDL_GPUTextureCreateInfo) {
                 .type = SDL_GPU_TEXTURETYPE_2D,
-                .format = depth_stencil_format,
+                .format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
                 .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
                 .width = SC_WINDOW_WIDTH,
                 .height = SC_WINDOW_HEIGHT,
@@ -104,8 +118,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     sc_ddraw_new(
         app->device,
         &(ScDebugDrawCreateInfo) {
-            .color_format = SDL_GetGPUSwapchainTextureFormat(app->device, app->window),
-            .depth_stencil_format = depth_stencil_format,
+            .color_format = SC_SWAPCHAIN_COLOR_FORMAT,
+            .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
         },
         &app->ddraw
     );
@@ -388,11 +402,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .target_info =
                 (SDL_GPUGraphicsPipelineTargetInfo) {
                     .color_target_descriptions = (SDL_GPUColorTargetDescription[]) {{
-                        .format = SDL_GetGPUSwapchainTextureFormat(app->device, app->window),
+                        .format = SC_SWAPCHAIN_COLOR_FORMAT,
                         .blend_state = (SDL_GPUColorTargetBlendState) {0},
                     }},
                     .num_color_targets = 1,
-                    .depth_stencil_format = depth_stencil_format,
+                    .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
                     .has_depth_stencil_target = true,
                 },
         }
@@ -481,11 +495,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .target_info =
                 (SDL_GPUGraphicsPipelineTargetInfo) {
                     .color_target_descriptions = (SDL_GPUColorTargetDescription[]) {{
-                        .format = SDL_GetGPUSwapchainTextureFormat(app->device, app->window),
+                        .format = SC_SWAPCHAIN_COLOR_FORMAT,
                         .blend_state = (SDL_GPUColorTargetBlendState) {0},
                     }},
                     .num_color_targets = 1,
-                    .depth_stencil_format = depth_stencil_format,
+                    .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
                     .has_depth_stencil_target = true,
                 },
         }
@@ -594,16 +608,15 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         const float aspect = window_width / window_height;
         const float z_near = 0.1f;
         const float z_far = 1000.0f;
-        const vec3f point_origin = bounds3f_center(app->octree.point_bounds);
+        const vec3f point_origin = box3f_center(app->octree.point_bounds);
 
         // Main.
         {
             const float camera_turn_speed = 0.25f;
-            const float camera_offset_radius =
-                1.0f + 500.0f * (0.5f + 0.5f * SDL_cosf(0.5f * time));
+            const float camera_offset_radius = 1.0f + 500.0f * (0.5f + 0.5f * cosf(0.5f * time));
             const vec3f camera_offset = (vec3f) {
-                camera_offset_radius * SDL_cosf(camera_turn_speed * time),
-                camera_offset_radius * SDL_sinf(camera_turn_speed * time),
+                camera_offset_radius * cosf(camera_turn_speed * time),
+                camera_offset_radius * sinf(camera_turn_speed * time),
                 camera_offset_radius * 0.5f,
             };
             const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
@@ -683,7 +696,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             .projection_view = transforms[MAIN],
             .inverse_projection_view = inverse_transforms[MAIN],
             .camera_position = camera_positions[MAIN],
-            .focal_length = 1.0f / SDL_tanf(camera_fov * 0.5f),
+            .focal_length = 1.0f / tanf(camera_fov * 0.5f),
             .window_width = window_width,
             .window_height = window_height,
         }

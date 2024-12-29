@@ -5,7 +5,7 @@
 - Scalar prefixes: c, uc, s, us, i, ui, l, ul, f, d
 - Vectors: vec2f, vec3i
 - Matrices: mat4f, mat2x3f
-- Geometry: point3f, line3f, bounds2f, bounds3f, plane3f, ray3f
+- Geometry: point3f, line3f, rect2f, box3f, plane3f, ray3f
 
 */
 
@@ -42,10 +42,10 @@ typedef struct mat4f {
     float m30, m31, m32, m33;
 } mat4f;
 
-typedef struct bounds3f {
+typedef struct box3f {
     vec3f mn;
     vec3f mx;
-} bounds3f;
+} box3f;
 
 typedef struct sphere3f {
     vec3f o;
@@ -86,7 +86,7 @@ static SC_INLINE vec3f vec3f_scale(vec3f lhs, float rhs) {
 }
 
 static SC_INLINE float vec3f_len(vec3f vec) {
-    return SDL_sqrtf((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z));
+    return sqrtf((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z));
 }
 
 static SC_INLINE vec3f vec3f_normalize(vec3f vec) {
@@ -297,9 +297,9 @@ static SC_INLINE mat4f mat4f_inverse(mat4f m) {
 }
 
 static SC_INLINE mat4f mat4f_perspective(float fov, float aspect, float znear, float zfar) {
-    const float num = 1.0f / SDL_tanf(fov * 0.5f);
-    const float a = num / aspect;
-    const float b = num;
+    const float focal_length = 1.0f / tanf(fov * 0.5f);
+    const float a = focal_length / aspect;
+    const float b = focal_length;
     const float c = zfar / (znear - zfar);
     const float d = (znear * zfar) / (znear - zfar);
     return (mat4f) {
@@ -357,30 +357,30 @@ static SC_INLINE mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
 // Geometry
 //
 
-static SC_INLINE vec3f bounds3f_extents(bounds3f bounds) {
+static SC_INLINE vec3f box3f_extents(box3f box) {
     return (vec3f) {
-        bounds.mx.x - bounds.mn.x,
-        bounds.mx.y - bounds.mn.y,
-        bounds.mx.z - bounds.mn.z,
+        box.mx.x - box.mn.x,
+        box.mx.y - box.mn.y,
+        box.mx.z - box.mn.z,
     };
 }
 
-static SC_INLINE vec3f bounds3f_center(bounds3f bounds) {
+static SC_INLINE vec3f box3f_center(box3f box) {
     return (vec3f) {
-        (bounds.mn.x + bounds.mx.x) * 0.5f,
-        (bounds.mn.y + bounds.mx.y) * 0.5f,
-        (bounds.mn.z + bounds.mx.z) * 0.5f,
+        (box.mn.x + box.mx.x) * 0.5f,
+        (box.mn.y + box.mx.y) * 0.5f,
+        (box.mn.z + box.mx.z) * 0.5f,
     };
 }
 
-static SC_INLINE bool bounds3f_contains(bounds3f bounds, vec3f point) {
-    return point.x >= bounds.mn.x && point.y >= bounds.mn.y && point.z >= bounds.mn.z
-        && point.x <= bounds.mx.x && point.y <= bounds.mx.y && point.z <= bounds.mx.z;
+static SC_INLINE bool box3f_contains(box3f box, vec3f point) {
+    return point.x >= box.mn.x && point.y >= box.mn.y && point.z >= box.mn.z && point.x <= box.mx.x
+        && point.y <= box.mx.y && point.z <= box.mx.z;
 }
 
-static SC_INLINE sphere3f sphere3f_from_bounds3f(bounds3f bounds) {
-    const vec3f origin = bounds3f_center(bounds);
-    const vec3f extents = bounds3f_extents(bounds);
+static SC_INLINE sphere3f sphere3f_from_box3f(box3f box) {
+    const vec3f origin = box3f_center(box);
+    const vec3f extents = box3f_extents(box);
     const float radius = vec3f_len(extents) * 0.5f;
     return (sphere3f) {
         .o = origin,
