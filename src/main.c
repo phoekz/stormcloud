@@ -4,6 +4,7 @@
 
 #include "common.h"
 #include "math.h"
+#include "camera.h"
 #include "octree.h"
 #include "gpu.h"
 #include "ddraw.h"
@@ -70,6 +71,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     const SDL_GPUSwapchainComposition composition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR;
     if (!SDL_WindowSupportsGPUPresentMode(app->device, app->window, present_mode)) {
         SC_LOG_ERROR("SDL_WindowSupportsGPUPresentMode failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (!SDL_WindowSupportsGPUSwapchainComposition(app->device, app->window, composition)) {
+        SC_LOG_ERROR("SDL_WindowSupportsGPUSwapchainComposition failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     if (!SDL_SetGPUSwapchainParameters(app->device, app->window, composition, present_mode)) {
@@ -165,7 +170,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             }
         );
         ScOctreeNodeInstance* data = SDL_MapGPUTransferBuffer(app->device, transfer_buffer, false);
-        memcpy(data, app->octree.instances, node_byte_count);
+        memcpy(data, app->octree.node_instances, node_byte_count);
         SDL_UnmapGPUTransferBuffer(app->device, transfer_buffer);
         SDL_GPUCommandBuffer* upload_cmd = SDL_AcquireGPUCommandBuffer(app->device);
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(upload_cmd);
@@ -577,12 +582,15 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     SDL_GPUViewport viewports[COUNT];
     mat4f transforms[COUNT];
     mat4f inverse_transforms[COUNT];
+    mat4f projection_transforms[COUNT];
+    mat4f view_transforms[COUNT];
+    vec3f camera_positions[COUNT];
+    float camera_fov = rad_from_deg(60.0f);
+    const float window_width = (float)(SC_WINDOW_WIDTH / 2);
+    const float window_height = (float)SC_WINDOW_HEIGHT;
     {
         // Common.
         const float time = (float)(SDL_GetTicks() / 1000.0);
-        const float fov = rad_from_deg(60.0f);
-        const float window_width = (float)(SC_WINDOW_WIDTH / 2);
-        const float window_height = (float)SC_WINDOW_HEIGHT;
         const float aspect = window_width / window_height;
         const float z_near = 0.1f;
         const float z_far = 1000.0f;
@@ -591,7 +599,8 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         // Main.
         {
             const float camera_turn_speed = 0.25f;
-            const float camera_offset_radius = 500.0f;
+            const float camera_offset_radius =
+                1.0f + 500.0f * (0.5f + 0.5f * SDL_cosf(0.5f * time));
             const vec3f camera_offset = (vec3f) {
                 camera_offset_radius * SDL_cosf(camera_turn_speed * time),
                 camera_offset_radius * SDL_sinf(camera_turn_speed * time),
@@ -600,10 +609,13 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
             const vec3f camera_target = point_origin;
             const vec3f camera_up = (vec3f) {0.0f, 0.0f, 1.0f};
-            const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
+            const mat4f projection = mat4f_perspective(camera_fov, aspect, z_near, z_far);
             const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
-            transforms[MAIN] = mat4f_mul(perspective, view);
+            transforms[MAIN] = mat4f_mul(projection, view);
             inverse_transforms[MAIN] = mat4f_inverse(transforms[MAIN]);
+            projection_transforms[MAIN] = projection;
+            view_transforms[MAIN] = view;
+            camera_positions[MAIN] = camera_origin;
             viewports[MAIN] = (SDL_GPUViewport) {
                 .x = 0.0f,
                 .y = 0.0f,
@@ -623,9 +635,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                 {-1.0f, 1.0f, 1.0f},
             };
             for (uint32_t i = 0; i < SC_COUNTOF(frustum_points); i++) {
-                vec4f v = vec4f_from_vec3f(frustum_points[i], 1.0f);
-                vec4f r = mat4f_mul_vec4f(inverse_transforms[MAIN], v);
-                vec4f h = vec4f_scale(r, 1.0f / r.w);
+                const vec4f v = vec4f_from_vec3f(frustum_points[i], 1.0f);
+                const vec4f r = mat4f_mul_vec4f(inverse_transforms[MAIN], v);
+                const vec4f h = vec4f_scale(r, 1.0f / r.w);
                 frustum_points[i] = vec3f_from_vec4f(h);
             }
             sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[1], 0xff00ff00);
@@ -644,10 +656,13 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
             const vec3f camera_target = point_origin;
             const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
-            const mat4f perspective = mat4f_perspective(fov, aspect, z_near, z_far);
+            const mat4f projection = mat4f_perspective(camera_fov, aspect, z_near, z_far);
             const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
-            transforms[AERIAL] = mat4f_mul(perspective, view);
+            transforms[AERIAL] = mat4f_mul(projection, view);
             inverse_transforms[AERIAL] = mat4f_inverse(transforms[AERIAL]);
+            projection_transforms[AERIAL] = projection;
+            view_transforms[AERIAL] = view;
+            camera_positions[AERIAL] = camera_origin;
             viewports[AERIAL] = (SDL_GPUViewport) {
                 .x = window_width,
                 .y = 0.0f,
@@ -659,7 +674,32 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     }
 
-    const uint32_t wanted_level = 10;
+    // Traverse.
+    sc_octree_traverse(
+        &app->octree,
+        &(ScOctreeTraverseInfo) {
+            .projection = projection_transforms[MAIN],
+            .view = view_transforms[MAIN],
+            .projection_view = transforms[MAIN],
+            .inverse_projection_view = inverse_transforms[MAIN],
+            .camera_position = camera_positions[MAIN],
+            .focal_length = 1.0f / SDL_tanf(camera_fov * 0.5f),
+            .window_width = window_width,
+            .window_height = window_height,
+        }
+    );
+
+    // Uniforms.
+    const ScOctreeUniforms uniforms[COUNT] = {
+        {
+            .projection_view = transforms[MAIN],
+            .node_world_scale = app->octree.node_world_scale,
+        },
+        {
+            .projection_view = transforms[AERIAL],
+            .node_world_scale = app->octree.node_world_scale,
+        },
+    };
 
     // Draw - points.
     {
@@ -680,16 +720,15 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             2
         );
 
-        for (uint32_t i = 0; i < 2; i++) {
-            SDL_SetGPUViewport(render_pass, &viewports[i]);
-            SDL_PushGPUVertexUniformData(cmd, 0, &transforms[i], sizeof(transforms[i]));
-            for (uint32_t node_idx = 0; node_idx < (uint32_t)app->octree.node_count; node_idx++) {
-                ScOctreeNode* node = &app->octree.nodes[node_idx];
-                if (node->level == wanted_level) {
-                    uint32_t vertex_count = (uint32_t)node->point_count;
-                    uint32_t vertex_offset = (uint32_t)node->point_offset;
-                    SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
-                }
+        for (uint32_t camera_idx = 0; camera_idx < COUNT; camera_idx++) {
+            SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
+            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms[camera_idx], sizeof(ScOctreeUniforms));
+            for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+                const uint32_t node_idx = app->octree.node_traverse[i];
+                const ScOctreeNode* node = &app->octree.nodes[node_idx];
+                const uint32_t vertex_count = (uint32_t)node->point_count;
+                const uint32_t vertex_offset = (uint32_t)node->point_offset;
+                SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
             }
         }
     }
@@ -713,14 +752,15 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             2
         );
 
-        for (uint32_t i = 0; i < 2; i++) {
-            SDL_SetGPUViewport(render_pass, &viewports[i]);
-            SDL_PushGPUVertexUniformData(cmd, 0, &transforms[i], sizeof(transforms[i]));
-            for (uint32_t node_idx = 0; node_idx < (uint32_t)app->octree.node_count; node_idx++) {
-                ScOctreeNode* node = &app->octree.nodes[node_idx];
-                if (node->level == wanted_level) {
-                    SDL_DrawGPUPrimitives(render_pass, app->bounds_vertex_count, 1, 0, node_idx);
-                }
+        for (uint32_t camera_idx = 0; camera_idx < COUNT; camera_idx++) {
+            if (camera_idx != AERIAL) {
+                continue;
+            }
+            SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
+            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms[camera_idx], sizeof(ScOctreeUniforms));
+            for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+                const uint32_t node_idx = app->octree.node_traverse[i];
+                SDL_DrawGPUPrimitives(render_pass, app->bounds_vertex_count, 1, 0, node_idx);
             }
         }
     }
