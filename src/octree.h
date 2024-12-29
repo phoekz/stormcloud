@@ -140,6 +140,7 @@ typedef struct ScOctreeTraverseInfo {
     float focal_length;
     float window_width;
     float window_height;
+    float lod_bias;
 } ScOctreeTraverseInfo;
 
 static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* traverse_info) {
@@ -154,6 +155,7 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
     const float window_width = traverse_info->window_width;
     const float window_height = traverse_info->window_height;
     const float window_area = window_width * window_height;
+    const float lod_bias = traverse_info->lod_bias;
 
     // Frustum planes and corners.
     // Todo: extract this to a function.
@@ -250,7 +252,7 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
         const float area = -SC_PI * fl * fl * r2 * sqrtf(fabsf((l2 - r2) / (r2 - z2))) / (r2 - z2);
         const float screen_area = area * window_area * 0.25f;
         // Todo: screen area can be negative, investigate why.
-        if (screen_area > 0.0 && screen_area < 1.0) {
+        if (screen_area > 0.0f && screen_area < lod_bias) {
             octree->node_traverse[octree->node_traverse_count++] = curr;
             continue;
         }

@@ -607,13 +607,14 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         const float time = (float)(SDL_GetTicks() / 1000.0);
         const float aspect = window_width / window_height;
         const float z_near = 0.1f;
-        const float z_far = 1000.0f;
+        const float z_far = 2500.0f;
         const vec3f point_origin = box3f_center(app->octree.point_bounds);
 
         // Main.
         {
             const float camera_turn_speed = 0.25f;
-            const float camera_offset_radius = 1.0f + 500.0f * (0.5f + 0.5f * cosf(0.5f * time));
+            const float camera_offset_radius =
+                50.0f + 1000.0f * (0.5f + 0.5f * cosf(33.333f + 0.5f * time));
             const vec3f camera_offset = (vec3f) {
                 camera_offset_radius * cosf(camera_turn_speed * time),
                 camera_offset_radius * sinf(camera_turn_speed * time),
@@ -699,6 +700,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             .focal_length = 1.0f / tanf(camera_fov * 0.5f),
             .window_width = window_width,
             .window_height = window_height,
+            .lod_bias = 1.0f / 8.0f,
         }
     );
 
