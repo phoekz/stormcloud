@@ -61,6 +61,46 @@ typedef struct plane3f {
 // Vector
 //
 
+static SC_INLINE vec3f vec3f_new(float x, float y, float z) {
+    return (vec3f) {
+        x,
+        y,
+        z,
+    };
+}
+
+static SC_INLINE vec3f vec3f_new_x(float x) {
+    return (vec3f) {
+        x,
+        0.0f,
+        0.0f,
+    };
+}
+
+static SC_INLINE vec3f vec3f_new_y(float y) {
+    return (vec3f) {
+        0.0f,
+        y,
+        0.0f,
+    };
+}
+
+static SC_INLINE vec3f vec3f_new_z(float z) {
+    return (vec3f) {
+        0.0f,
+        0.0f,
+        z,
+    };
+}
+
+static SC_INLINE vec3f vec3f_neg(vec3f vec) {
+    return (vec3f) {
+        -vec.x,
+        -vec.y,
+        -vec.z,
+    };
+}
+
 static SC_INLINE vec3f vec3f_add(vec3f lhs, vec3f rhs) {
     return (vec3f) {
         lhs.x + rhs.x,
@@ -107,6 +147,15 @@ static SC_INLINE vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
         lhs.y * rhs.z - rhs.y * lhs.z,
         -(lhs.x * rhs.z - rhs.x * lhs.z),
         lhs.x * rhs.y - rhs.x * lhs.y,
+    };
+}
+
+static SC_INLINE vec4f vec4f_new(float x, float y, float z, float w) {
+    return (vec4f) {
+        x,
+        y,
+        z,
+        w,
     };
 }
 
@@ -181,6 +230,28 @@ static SC_INLINE mat4f mat4f_identity() {
         0.0f,
         1.0f,
     };
+}
+
+static SC_INLINE vec4f mat4f_col(mat4f m, uint8_t col) {
+    SC_ASSERT(col < 4);
+    switch (col) {
+        case 0: return (vec4f) {m.m00, m.m01, m.m02, m.m03};
+        case 1: return (vec4f) {m.m10, m.m11, m.m12, m.m13};
+        case 2: return (vec4f) {m.m20, m.m21, m.m22, m.m23};
+        case 3: return (vec4f) {m.m30, m.m31, m.m32, m.m33};
+        default: return (vec4f) {0.0f, 0.0f, 0.0f, 0.0f};
+    }
+}
+
+static SC_INLINE vec4f mat4f_row(mat4f m, uint8_t row) {
+    SC_ASSERT(row < 4);
+    switch (row) {
+        case 0: return (vec4f) {m.m00, m.m10, m.m20, m.m30};
+        case 1: return (vec4f) {m.m01, m.m11, m.m21, m.m31};
+        case 2: return (vec4f) {m.m02, m.m12, m.m22, m.m32};
+        case 3: return (vec4f) {m.m03, m.m13, m.m23, m.m33};
+        default: return (vec4f) {0.0f, 0.0f, 0.0f, 0.0f};
+    }
 }
 
 static SC_INLINE vec4f mat4f_mul_vec4f(mat4f m, vec4f v) {
@@ -322,29 +393,29 @@ static SC_INLINE mat4f mat4f_perspective(float fov, float aspect, float znear, f
     };
 }
 
-static SC_INLINE mat4f mat4f_lookat(vec3f origin, vec3f target, vec3f up) {
-    const vec3f fwd = vec3f_normalize((vec3f) {
-        origin.x - target.x,
-        origin.y - target.y,
-        origin.z - target.z,
+static SC_INLINE mat4f mat4f_lookat(vec3f eye, vec3f center, vec3f global_up) {
+    const vec3f forward = vec3f_normalize((vec3f) {
+        center.x - eye.x,
+        center.y - eye.y,
+        center.z - eye.z,
     });
-    const vec3f right = vec3f_normalize(vec3f_cross(up, fwd));
-    const vec3f up_corrected = vec3f_cross(fwd, right);
-    const float tx = -vec3f_dot(right, origin);
-    const float ty = -vec3f_dot(up_corrected, origin);
-    const float tz = -vec3f_dot(fwd, origin);
+    const vec3f right = vec3f_normalize(vec3f_cross(forward, global_up));
+    const vec3f up = vec3f_normalize(vec3f_cross(right, forward));
+    const float tx = -vec3f_dot(right, eye);
+    const float ty = -vec3f_dot(up, eye);
+    const float tz = vec3f_dot(forward, eye);
     return (mat4f) {
         right.x,
-        up_corrected.x,
-        fwd.x,
+        up.x,
+        -forward.x,
         0.0f,
         right.y,
-        up_corrected.y,
-        fwd.y,
+        up.y,
+        -forward.y,
         0.0f,
         right.z,
-        up_corrected.z,
-        fwd.z,
+        up.z,
+        -forward.z,
         0.0f,
         tx,
         ty,
@@ -404,10 +475,10 @@ static SC_INLINE plane3f plane3f_normalize(plane3f plane) {
 }
 
 static SC_INLINE plane3f plane3f_from_vec4f(vec4f vec) {
-    return (plane3f) {
+    return plane3f_normalize((plane3f) {
         .n = (vec3f) {vec.x, vec.y, vec.z},
         .d = vec.w,
-    };
+    });
 }
 
 static SC_INLINE vec4f vec4f_from_plane3f(plane3f plane) {

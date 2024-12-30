@@ -1,5 +1,5 @@
 cbuffer uniform_buffer: register(b0, space1) {
-    float4x4 transform: packoffset(c0);
+    float4x4 clip_from_world: packoffset(c0);
 }
 
 struct vs_input {
@@ -14,7 +14,7 @@ struct vs_output {
 
 vs_output vs_main(vs_input input) {
     vs_output output;
-    output.position = mul(transform, float4(input.position, 1.0f));
+    output.position = mul(clip_from_world, float4(input.position, 1.0f));
     output.color = input.color;
     return output;
 }

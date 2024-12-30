@@ -1,5 +1,5 @@
 cbuffer uniform_buffer: register(b0, space1) {
-    float4x4 transform;
+    float4x4 clip_from_world;
     float node_world_scale;
     uint32_t pad_0;
     uint32_t pad_1;
@@ -38,7 +38,7 @@ vs_output vs_main(vs_input input) {
     const float3 position = float3(x, y, z);
 
     vs_output output;
-    output.position = mul(transform, float4(position, 1.0f));
+    output.position = mul(clip_from_world, float4(position, 1.0f));
     output.color = input.color;
     return output;
 }

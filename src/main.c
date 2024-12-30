@@ -587,101 +587,96 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     );
 
-    // Camera.
+    // Cameras.
     enum {
         MAIN,
         AERIAL,
         COUNT,
     };
+    ScPerspectiveCamera cameras[COUNT];
     SDL_GPUViewport viewports[COUNT];
-    mat4f transforms[COUNT];
-    mat4f inverse_transforms[COUNT];
-    mat4f projection_transforms[COUNT];
-    mat4f view_transforms[COUNT];
-    vec3f camera_positions[COUNT];
-    float camera_fov = rad_from_deg(60.0f);
-    const float window_width = (float)(SC_WINDOW_WIDTH / 2);
-    const float window_height = (float)SC_WINDOW_HEIGHT;
     {
         // Common.
         const float time = (float)(SDL_GetTicks() / 1000.0);
-        const float aspect = window_width / window_height;
-        const float z_near = 0.1f;
-        const float z_far = 2500.0f;
-        const vec3f point_origin = box3f_center(app->octree.point_bounds);
+        const float screen_width = (float)(SC_WINDOW_WIDTH / 2);
+        const float screen_height = (float)SC_WINDOW_HEIGHT;
+        float field_of_view = rad_from_deg(60.0f);
+        const float clip_distance_near = 16.0f;
+        const float clip_distance_far = 2048.0f;
+        const vec3f world_origin = box3f_center(app->octree.point_bounds);
 
         // Main.
         {
             const float camera_turn_speed = 0.25f;
             const float camera_offset_radius =
-                50.0f + 1000.0f * (0.5f + 0.5f * cosf(33.333f + 0.5f * time));
+                64.0f + 1000.0f * (0.5f + 0.5f * cosf(33.333f + 0.5f * time));
             const vec3f camera_offset = (vec3f) {
                 camera_offset_radius * cosf(camera_turn_speed * time),
                 camera_offset_radius * sinf(camera_turn_speed * time),
                 camera_offset_radius * 0.5f,
             };
-            const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
-            const vec3f camera_target = point_origin;
+            const vec3f camera_position = vec3f_add(world_origin, camera_offset);
+            const vec3f camera_target = world_origin;
             const vec3f camera_up = (vec3f) {0.0f, 0.0f, 1.0f};
-            const mat4f projection = mat4f_perspective(camera_fov, aspect, z_near, z_far);
-            const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
-            transforms[MAIN] = mat4f_mul(projection, view);
-            inverse_transforms[MAIN] = mat4f_inverse(transforms[MAIN]);
-            projection_transforms[MAIN] = projection;
-            view_transforms[MAIN] = view;
-            camera_positions[MAIN] = camera_origin;
+            cameras[MAIN] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
+                .screen_width = screen_width,
+                .screen_height = screen_height,
+                .field_of_view = field_of_view,
+                .clip_distance_near = clip_distance_near,
+                .clip_distance_far = clip_distance_far,
+                .world_position = camera_position,
+                .world_target = camera_target,
+                .world_up = camera_up,
+            });
             viewports[MAIN] = (SDL_GPUViewport) {
                 .x = 0.0f,
                 .y = 0.0f,
-                .w = window_width,
-                .h = window_height,
+                .w = screen_width,
+                .h = screen_height,
                 .min_depth = 0.0f,
                 .max_depth = 1.0f,
             };
 
-            sc_ddraw_line(&app->ddraw, camera_origin, camera_target, 0xff0000ff);
-
-            vec3f frustum_points[5] = {
-                {0.0f, 0.0f, 0.0f},
-                {-1.0f, -1.0f, 1.0f},
-                {1.0f, -1.0f, 1.0f},
-                {1.0f, 1.0f, 1.0f},
-                {-1.0f, 1.0f, 1.0f},
-            };
-            for (uint32_t i = 0; i < SC_COUNTOF(frustum_points); i++) {
-                const vec4f v = vec4f_from_vec3f(frustum_points[i], 1.0f);
-                const vec4f r = mat4f_mul_vec4f(inverse_transforms[MAIN], v);
-                const vec4f h = vec4f_scale(r, 1.0f / r.w);
-                frustum_points[i] = vec3f_from_vec4f(h);
-            }
-            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[1], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[2], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[3], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[0], frustum_points[4], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[1], frustum_points[2], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[2], frustum_points[3], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[3], frustum_points[4], 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, frustum_points[4], frustum_points[1], 0xff00ff00);
+            // clang-format off
+            const ScFrustum* frustum = &cameras[MAIN].frustum;
+            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_right, 50.0f)), 0xff0000ff);
+            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_up, 50.0f)), 0xff00ff00);
+            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_forward, 50.0f)), 0xffff0000);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_LBF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBN], frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTN], frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RTN], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_RBN], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTN], frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_LTN], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBN], frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBF], frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTF], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBF], frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
+            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBF], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+            // clang-format on
         }
 
         // Aerial.
         {
-            const vec3f camera_offset = (vec3f) {0.0f, 0.0f, 1000.0f};
-            const vec3f camera_origin = vec3f_add(point_origin, camera_offset);
-            const vec3f camera_target = point_origin;
+            const vec3f camera_position = (vec3f) {0.0f, 0.0f, 1000.0f};
+            const vec3f camera_target = world_origin;
             const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
-            const mat4f projection = mat4f_perspective(camera_fov, aspect, z_near, z_far);
-            const mat4f view = mat4f_lookat(camera_origin, camera_target, camera_up);
-            transforms[AERIAL] = mat4f_mul(projection, view);
-            inverse_transforms[AERIAL] = mat4f_inverse(transforms[AERIAL]);
-            projection_transforms[AERIAL] = projection;
-            view_transforms[AERIAL] = view;
-            camera_positions[AERIAL] = camera_origin;
+            cameras[AERIAL] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
+                .screen_width = screen_width,
+                .screen_height = screen_height,
+                .field_of_view = field_of_view,
+                .clip_distance_near = clip_distance_near,
+                .clip_distance_far = clip_distance_far,
+                .world_position = camera_position,
+                .world_target = camera_target,
+                .world_up = camera_up,
+            });
             viewports[AERIAL] = (SDL_GPUViewport) {
-                .x = window_width,
+                .x = screen_width,
                 .y = 0.0f,
-                .w = window_width,
-                .h = window_height,
+                .w = screen_width,
+                .h = screen_height,
                 .min_depth = 0.0f,
                 .max_depth = 1.0f,
             };
@@ -692,14 +687,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     sc_octree_traverse(
         &app->octree,
         &(ScOctreeTraverseInfo) {
-            .projection = projection_transforms[MAIN],
-            .view = view_transforms[MAIN],
-            .projection_view = transforms[MAIN],
-            .inverse_projection_view = inverse_transforms[MAIN],
-            .camera_position = camera_positions[MAIN],
-            .focal_length = 1.0f / tanf(camera_fov * 0.5f),
-            .window_width = window_width,
-            .window_height = window_height,
+            .camera = &cameras[MAIN],
             .lod_bias = 1.0f / 8.0f,
         }
     );
@@ -707,11 +695,11 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Uniforms.
     const ScOctreeUniforms uniforms[COUNT] = {
         {
-            .projection_view = transforms[MAIN],
+            .clip_from_world = cameras[MAIN].clip_from_world,
             .node_world_scale = app->octree.node_world_scale,
         },
         {
-            .projection_view = transforms[AERIAL],
+            .clip_from_world = cameras[AERIAL].clip_from_world,
             .node_world_scale = app->octree.node_world_scale,
         },
     };
@@ -788,7 +776,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             .command_buffer = cmd,
             .render_pass = render_pass,
             .viewport = viewports[AERIAL],
-            .transform = transforms[AERIAL],
+            .clip_from_world = cameras[AERIAL].clip_from_world,
         }
     );
 

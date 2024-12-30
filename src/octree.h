@@ -31,7 +31,7 @@ typedef struct ScOctreePoint {
 } ScOctreePoint;
 
 typedef struct ScOctreeUniforms {
-    mat4f projection_view;
+    mat4f clip_from_world;
     float node_world_scale;
     uint32_t pad[3];
 } ScOctreeUniforms;
@@ -132,14 +132,7 @@ static void sc_octree_free(ScOctree* octree) {
 }
 
 typedef struct ScOctreeTraverseInfo {
-    mat4f projection;
-    mat4f view;
-    mat4f projection_view;
-    mat4f inverse_projection_view;
-    vec3f camera_position;
-    float focal_length;
-    float window_width;
-    float window_height;
+    const ScPerspectiveCamera* camera;
     float lod_bias;
 } ScOctreeTraverseInfo;
 
@@ -148,50 +141,8 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
     const float node_unit_count = octree->node_unit_count;
     const float node_world_scale = octree->node_world_scale;
     const uint32_t node_leaf_level = octree->node_leaf_level;
-    const mat4f view = traverse_info->view;
-    const mat4f projection_view = traverse_info->projection_view;
-    const mat4f inverse_projection_view = traverse_info->inverse_projection_view;
-    const float focal_length = traverse_info->focal_length;
-    const float window_width = traverse_info->window_width;
-    const float window_height = traverse_info->window_height;
-    const float window_area = window_width * window_height;
+    const ScPerspectiveCamera* camera = traverse_info->camera;
     const float lod_bias = traverse_info->lod_bias;
-
-    // Frustum planes and corners.
-    // Todo: extract this to a function.
-    plane3f frustum_planes[6] = {0};
-    vec3f frustum_corners[8] = {0};
-    {
-        const mat4f pv = projection_view;
-        const mat4f ipv = inverse_projection_view;
-        const vec4f row_0 = {pv.m00, pv.m10, pv.m20, pv.m30};
-        const vec4f row_1 = {pv.m01, pv.m11, pv.m21, pv.m31};
-        const vec4f row_2 = {pv.m02, pv.m12, pv.m22, pv.m32};
-        const vec4f row_3 = {pv.m03, pv.m13, pv.m23, pv.m33};
-
-        frustum_planes[0] = plane3f_normalize(plane3f_from_vec4f(vec4f_sub(row_3, row_0)));
-        frustum_planes[1] = plane3f_normalize(plane3f_from_vec4f(vec4f_add(row_3, row_0)));
-        frustum_planes[2] = plane3f_normalize(plane3f_from_vec4f(vec4f_sub(row_3, row_1)));
-        frustum_planes[3] = plane3f_normalize(plane3f_from_vec4f(vec4f_add(row_3, row_1)));
-        frustum_planes[4] = plane3f_normalize(plane3f_from_vec4f(vec4f_sub(row_3, row_2)));
-        frustum_planes[5] = plane3f_normalize(plane3f_from_vec4f(vec4f_add(row_3, row_2)));
-
-        frustum_corners[0] = (vec3f) {-1.0f, -1.0f, 0.0f};
-        frustum_corners[1] = (vec3f) {1.0f, -1.0f, 0.0f};
-        frustum_corners[2] = (vec3f) {1.0f, 1.0f, 0.0f};
-        frustum_corners[3] = (vec3f) {-1.0f, 1.0f, 0.0f};
-        frustum_corners[4] = (vec3f) {-1.0f, -1.0f, 1.0f};
-        frustum_corners[5] = (vec3f) {1.0f, -1.0f, 1.0f};
-        frustum_corners[6] = (vec3f) {1.0f, 1.0f, 1.0f};
-        frustum_corners[7] = (vec3f) {-1.0f, 1.0f, 1.0f};
-        for (uint32_t i = 0; i < 8; i++) {
-            const vec3f corner = frustum_corners[i];
-            const vec4f v = vec4f_from_vec3f(corner, 1.0f);
-            const vec4f r = mat4f_mul_vec4f(ipv, v);
-            const vec4f h = vec4f_scale(r, 1.0f / r.w);
-            frustum_corners[i] = vec3f_from_vec4f(h);
-        }
-    }
 
     // Reset.
     octree->node_traverse_count = 0;
@@ -224,11 +175,11 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
         };
 
         // Frustum culling.
-        if (!sc_frustum_box_test(frustum_planes, frustum_corners, curr_bounds)) {
+        if (!sc_frustum_intersects_box(&camera->frustum, curr_bounds)) {
             continue;
         }
 
-        // Special: leaf node are always rendered.
+        // Special: leaf nodes are always rendered.
         if (curr_node->level == node_leaf_level) {
             octree->node_traverse[octree->node_traverse_count++] = curr;
             continue;
@@ -241,18 +192,10 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
             .r = curr_sphere.r / node_unit_count,
         };
 
-        // Calculate projected screen area.
-        // From: https://iquilezles.org/articles/sphereproj/
-        const vec3f o =
-            vec3f_from_vec4f(mat4f_mul_vec4f(view, vec4f_from_vec3f(unit_sphere.o, 1.0f)));
-        const float r2 = unit_sphere.r * unit_sphere.r;
-        const float z2 = o.z * o.z;
-        const float l2 = vec3f_dot(o, o);
-        const float fl = focal_length;
-        const float area = -SC_PI * fl * fl * r2 * sqrtf(fabsf((l2 - r2) / (r2 - z2))) / (r2 - z2);
-        const float screen_area = area * window_area * 0.25f;
-        // Todo: screen area can be negative, investigate why.
-        if (screen_area > 0.0f && screen_area < lod_bias) {
+        // Screen projected sphere area.
+        // Todo: Can be negative, investigate why.
+        const float sphere_area = sc_screen_projected_sphere_area(camera, unit_sphere);
+        if (sphere_area > 0.0f && sphere_area < lod_bias) {
             octree->node_traverse[octree->node_traverse_count++] = curr;
             continue;
         }

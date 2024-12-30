@@ -13,7 +13,7 @@ typedef struct ScDebugRenderInfo {
     SDL_GPUCommandBuffer* command_buffer;
     SDL_GPURenderPass* render_pass;
     SDL_GPUViewport viewport;
-    mat4f transform;
+    mat4f clip_from_world;
 } ScDebugRenderInfo;
 
 typedef struct ScDebugDraw {
@@ -223,8 +223,8 @@ static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) 
     SDL_PushGPUVertexUniformData(
         command_buffer,
         0,
-        &render_info->transform,
-        sizeof(render_info->transform)
+        &render_info->clip_from_world,
+        sizeof(render_info->clip_from_world)
     );
     SDL_DrawGPUPrimitives(render_pass, ddraw->line_count, 1, 0, 0);
 
