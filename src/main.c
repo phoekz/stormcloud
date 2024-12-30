@@ -116,12 +116,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     // Debug draw.
     sc_ddraw_new(
+        &app->ddraw,
         app->device,
         &(ScDebugDrawCreateInfo) {
             .color_format = SC_SWAPCHAIN_COLOR_FORMAT,
             .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
-        },
-        &app->ddraw
+        }
     );
 
     // Vertex buffer - points.
@@ -799,7 +799,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(app->device, app->point_buffer);
     SDL_ReleaseGPUBuffer(app->device, app->bounds_buffer);
     SDL_ReleaseGPUTexture(app->device, app->depth_stencil_texture);
-    sc_ddraw_free(app->device, &app->ddraw);
+    sc_ddraw_free(&app->ddraw, app->device);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);
     SDL_DestroyGPUDevice(app->device);

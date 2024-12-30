@@ -29,7 +29,7 @@ typedef struct ScDebugDraw {
 } ScDebugDraw;
 
 static void
-sc_ddraw_new(SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info, ScDebugDraw* ddraw) {
+sc_ddraw_new(ScDebugDraw* ddraw, SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info) {
     // Buffers.
     ddraw->line_count = 0;
     ddraw->line_capacity = 1024;
@@ -151,7 +151,7 @@ sc_ddraw_new(SDL_GPUDevice* device, const ScDebugDrawCreateInfo* create_info, Sc
     SDL_ReleaseGPUShader(device, fragment_shader);
 }
 
-static void sc_ddraw_free(SDL_GPUDevice* device, ScDebugDraw* ddraw) {
+static void sc_ddraw_free(ScDebugDraw* ddraw, SDL_GPUDevice* device) {
     SDL_ReleaseGPUGraphicsPipeline(device, ddraw->line_pipeline);
     SDL_ReleaseGPUBuffer(device, ddraw->line_buffer);
     SDL_ReleaseGPUTransferBuffer(device, ddraw->line_transfer_buffer);
