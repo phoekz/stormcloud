@@ -27,6 +27,10 @@ static SC_INLINE float deg_from_rad(float rad) {
 // Types
 //
 
+typedef struct vec2f {
+    float x, y;
+} vec2f;
+
 typedef struct vec3f {
     float x, y, z;
 } vec3f;

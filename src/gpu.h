@@ -2,6 +2,7 @@ typedef struct ScGpuShaderCreateInfo {
     const char* file_path;
     const char* entry_point;
     SDL_GPUShaderStage shader_stage;
+    uint32_t sampler_count;
     uint32_t uniform_buffer_count;
 } ScGpuShaderCreateInfo;
 
@@ -18,7 +19,7 @@ sc_gpu_shader_new(SDL_GPUDevice* device, const ScGpuShaderCreateInfo* create_inf
             .entrypoint = create_info->entry_point,
             .format = SDL_GPU_SHADERFORMAT_DXIL,
             .stage = create_info->shader_stage,
-            .num_samplers = 0,
+            .num_samplers = create_info->sampler_count,
             .num_storage_textures = 0,
             .num_storage_buffers = 0,
             .num_uniform_buffers = create_info->uniform_buffer_count,

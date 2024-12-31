@@ -1,5 +1,5 @@
 cbuffer uniform_buffer: register(b0, space1) {
-    float4x4 clip_from_world: packoffset(c0);
+    float4x4 clip_from_world;
 }
 
 struct vs_input {

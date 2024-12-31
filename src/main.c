@@ -8,6 +8,7 @@
 #include "octree.h"
 #include "gpu.h"
 #include "ddraw.h"
+#include "gui.h"
 
 //
 // Stormcloud - App.
@@ -20,9 +21,15 @@
 #define SC_SWAPCHAIN_COLOR_FORMAT SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB
 #define SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT SDL_GPU_TEXTUREFORMAT_D32_FLOAT
 
+typedef struct ScAppParameters {
+    float lod_bias;
+} ScAppParameters;
+
 typedef struct ScApp {
+    ScAppParameters parameters;
     ScOctree octree;
     ScDebugDraw ddraw;
+    ScGui gui;
 
     SDL_Window* window;
     SDL_GPUDevice* device;
@@ -45,6 +52,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     // Create app.
     ScApp* app = calloc(1, sizeof(ScApp));
     *appstate = app;
+
+    // Parameters.
+    app->parameters.lod_bias = 1.0f / 8.0f;
 
     // Octree.
     sc_octree_new(&app->octree, argv[1]);
@@ -286,6 +296,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .file_path = "src/shaders/dxil/point.vert",
             .entry_point = "vs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_VERTEX,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );
@@ -295,6 +306,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .file_path = "src/shaders/dxil/point.frag",
             .entry_point = "fs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );
@@ -304,6 +316,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .file_path = "src/shaders/dxil/bounds.vert",
             .entry_point = "vs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_VERTEX,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );
@@ -313,6 +326,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
             .file_path = "src/shaders/dxil/bounds.frag",
             .entry_point = "fs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );
@@ -513,6 +527,17 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     SDL_ReleaseGPUShader(app->device, bounds_vertex_shader);
     SDL_ReleaseGPUShader(app->device, bounds_fragment_shader);
 
+    // Gui.
+    sc_gui_new(
+        &app->gui,
+        &(ScGuiCreateInfo) {
+            .window = app->window,
+            .device = app->device,
+            .color_format = SC_SWAPCHAIN_COLOR_FORMAT,
+            .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
+        }
+    );
+
     return SDL_APP_CONTINUE;
 }
 
@@ -530,6 +555,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
             return SDL_APP_SUCCESS;
         }
     }
+    sc_gui_event(&app->gui, event);
 
     return SDL_APP_CONTINUE;
 }
@@ -537,6 +563,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 SDL_AppResult SDL_AppIterate(void* appstate) {
     // Unpack.
     ScApp* app = (ScApp*)appstate;
+
+    // Gui - begin.
+    sc_gui_frame_begin(&app->gui);
 
     // Command buffer.
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(app->device);
@@ -688,9 +717,29 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         &app->octree,
         &(ScOctreeTraverseInfo) {
             .camera = &cameras[MAIN],
-            .lod_bias = 1.0f / 8.0f,
+            .lod_bias = app->parameters.lod_bias,
         }
     );
+
+    // Gui.
+    {
+        uint64_t visible_point_count = 0;
+        for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+            const uint32_t node_idx = app->octree.node_traverse[i];
+            const ScOctreeNode* node = &app->octree.nodes[node_idx];
+            visible_point_count += node->point_count;
+        }
+        const float visible_mpoint_count = (float)visible_point_count / 1e6f;
+
+        ImGui_SetNextWindowSize((ImVec2) {240.0f, 300.0f}, ImGuiCond_Once);
+        ImGui_Begin("stormcloud", NULL, 0);
+        ImGui_Text("octree_points: %u", app->octree.point_count);
+        ImGui_Text("octree_nodes: %u", app->octree.node_count);
+        ImGui_Text("traversed_nodes: %u", app->octree.node_traverse_count);
+        ImGui_Text("visible_points: %u (%.2fM)", visible_point_count, visible_mpoint_count);
+        ImGui_SliderFloat("lod_bias", &app->parameters.lod_bias, 0.0f, 1.0f);
+        ImGui_End();
+    }
 
     // Uniforms.
     const ScOctreeUniforms uniforms[COUNT] = {
@@ -780,6 +829,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     );
 
+    // Gui - end.
+    sc_gui_frame_end(&app->gui, app->device, cmd, render_pass);
+
     // Render pass - end.
     SDL_EndGPURenderPass(render_pass);
 
@@ -800,6 +852,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(app->device, app->bounds_buffer);
     SDL_ReleaseGPUTexture(app->device, app->depth_stencil_texture);
     sc_ddraw_free(&app->ddraw, app->device);
+    sc_gui_free(&app->gui, app->device);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);
     SDL_DestroyGPUDevice(app->device);

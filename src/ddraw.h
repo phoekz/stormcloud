@@ -57,6 +57,7 @@ sc_ddraw_new(ScDebugDraw* ddraw, SDL_GPUDevice* device, const ScDebugDrawCreateI
             .file_path = "src/shaders/dxil/ddraw.vert",
             .entry_point = "vs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_VERTEX,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );
@@ -66,6 +67,7 @@ sc_ddraw_new(ScDebugDraw* ddraw, SDL_GPUDevice* device, const ScDebugDrawCreateI
             .file_path = "src/shaders/dxil/ddraw.frag",
             .entry_point = "fs_main",
             .shader_stage = SDL_GPU_SHADERSTAGE_FRAGMENT,
+            .sampler_count = 0,
             .uniform_buffer_count = 1,
         }
     );

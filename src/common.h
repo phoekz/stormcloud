@@ -9,6 +9,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <dcimgui.h>
 
 #define SC_UNUSED(x) (void)(x)
 #define SC_ASSERT(expr) \
@@ -24,3 +25,5 @@
         SC_LOG_ERROR("SDL error: %s", SDL_GetError()); \
         abort();                                       \
     }
+
+#define SC_INFLIGHT_FRAME_COUNT 2
