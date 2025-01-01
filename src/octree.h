@@ -73,6 +73,19 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     octree->points = malloc(octree->point_count * sizeof(ScOctreePoint));
     fread(octree->points, 1, octree->point_count * sizeof(ScOctreePoint), file);
 
+    // Debug: morton order visualization.
+    const bool debug_morton_order = false;
+    if (debug_morton_order) {
+        for (uint32_t node_idx = 0; node_idx < octree->node_count; ++node_idx) {
+            ScOctreeNode* node = &octree->nodes[node_idx];
+            for (uint32_t point_idx = 0; point_idx < node->point_count; ++point_idx) {
+                ScOctreePoint* point = &octree->points[node->point_offset + point_idx];
+                float linear_ratio = (float)point_idx / (float)node->point_count;
+                point->color = sc_color_from_hsv(linear_ratio, 0.75f, 1.0f);
+            }
+        }
+    }
+
     // Node instances.
     octree->node_instances = malloc(octree->node_count * sizeof(ScOctreeNodeInstance));
     for (uint64_t i = 0; i < octree->node_count; ++i) {

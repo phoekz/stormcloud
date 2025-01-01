@@ -4,6 +4,7 @@
 
 #include "common.h"
 #include "math.h"
+#include "color.h"
 #include "camera.h"
 #include "octree.h"
 #include "gpu.h"

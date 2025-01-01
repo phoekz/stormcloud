@@ -115,6 +115,7 @@ add_custom_target(shaders DEPENDS ${vert_files} ${frag_files})
 add_executable(stormcloud
     src/main.c
     src/camera.h
+    src/color.h
     src/common.h
     src/ddraw.h
     src/gpu.h
