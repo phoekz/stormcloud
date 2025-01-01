@@ -1,17 +1,13 @@
 typedef struct ScOctreeNode {
-    uint32_t index;
-    uint32_t level;
     int32_t min_x;
     int32_t min_y;
     int32_t min_z;
     int32_t max_x;
     int32_t max_y;
     int32_t max_z;
-    uint32_t mask;
-    uint32_t pad_0;
-    uint32_t pad_1;
-    uint32_t pad_2;
-    uint64_t point_count;
+    uint16_t level;
+    uint16_t octant_mask;
+    uint32_t point_count;
     uint64_t point_offset;
     uint32_t octants[8];
 } ScOctreeNode;
@@ -40,7 +36,6 @@ typedef struct ScOctree {
     float unit_world_scale;
     float node_unit_count;
     float node_world_scale;
-    uint32_t node_leaf_level;
 
     ScOctreeNode* nodes;
     ScOctreeNodeInstance* node_instances;
@@ -69,7 +64,6 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     fread(&octree->unit_world_scale, 1, sizeof(float), file);
     fread(&octree->node_unit_count, 1, sizeof(float), file);
     fread(&octree->node_world_scale, 1, sizeof(float), file);
-    fread(&octree->node_leaf_level, 1, sizeof(uint32_t), file);
 
     // Load nodes.
     octree->nodes = malloc(octree->node_count * sizeof(ScOctreeNode));
@@ -120,7 +114,6 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     SC_LOG_INFO("Unit world scale: %f", octree->unit_world_scale);
     SC_LOG_INFO("Node unit count: %f", octree->node_unit_count);
     SC_LOG_INFO("Node world scale: %f", octree->node_world_scale);
-    SC_LOG_INFO("Node leaf level: %u", octree->node_leaf_level);
     // clang-format on
 }
 
@@ -140,7 +133,6 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
     // Unpack.
     const float node_unit_count = octree->node_unit_count;
     const float node_world_scale = octree->node_world_scale;
-    const uint32_t node_leaf_level = octree->node_leaf_level;
     const ScPerspectiveCamera* camera = traverse_info->camera;
     const float lod_bias = traverse_info->lod_bias;
 
@@ -180,7 +172,7 @@ static void sc_octree_traverse(ScOctree* octree, const ScOctreeTraverseInfo* tra
         }
 
         // Special: leaf nodes are always rendered.
-        if (curr_node->level == node_leaf_level) {
+        if (curr_node->level == 0) {
             octree->node_traverse[octree->node_traverse_count++] = curr;
             continue;
         }

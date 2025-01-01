@@ -688,7 +688,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
         // Aerial.
         {
-            const vec3f camera_position = (vec3f) {0.0f, 0.0f, 1000.0f};
+            const vec3f camera_position = (vec3f) {0.0f, 0.0f, 2000.0f};
             const vec3f camera_target = world_origin;
             const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
             cameras[AERIAL] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
