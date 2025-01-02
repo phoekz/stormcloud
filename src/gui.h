@@ -24,13 +24,19 @@ typedef struct ScGuiCreateInfo {
     SDL_GPUTextureFormat depth_stencil_format;
 } ScGuiCreateInfo;
 
+typedef struct ScGuiRenderInfo {
+    SDL_GPUDevice* device;
+    SDL_GPUCommandBuffer* command_buffer;
+    SDL_GPURenderPass* render_pass;
+    uint32_t frame_index;
+} ScGuiRenderInfo;
+
 typedef struct ScGui {
     ImGuiContext* context;
     SDL_Window* window;
     char* clipboard_text;
     uint64_t performance_frequency;
     uint64_t performance_counter;
-    uint32_t frame_index;
     SDL_GPUTransferBuffer* transfer_buffers[SC_INFLIGHT_FRAME_COUNT];
     SDL_GPUBuffer* vertex_buffers[SC_INFLIGHT_FRAME_COUNT];
     SDL_GPUBuffer* index_buffers[SC_INFLIGHT_FRAME_COUNT];
@@ -122,7 +128,6 @@ static void sc_gui_new(ScGui* gui, const ScGuiCreateInfo* create_info) {
     // Timing.
     gui->performance_frequency = SDL_GetPerformanceFrequency();
     gui->performance_counter = SDL_GetPerformanceCounter();
-    gui->frame_index = 0;
 
     // Buffers.
     gui->vertex_buffer_capacity = 1 << 12;
@@ -132,7 +137,7 @@ static void sc_gui_new(ScGui* gui, const ScGuiCreateInfo* create_info) {
     const uint32_t total_byte_count = vertex_byte_count + index_byte_count;
     gui->vertex_data = malloc(vertex_byte_count);
     gui->index_data = malloc(index_byte_count);
-    for (uint32_t i = 0; i < 2; i++) {
+    for (uint32_t i = 0; i < SC_INFLIGHT_FRAME_COUNT; i++) {
         gui->vertex_buffers[i] = SDL_CreateGPUBuffer(
             device,
             &(SDL_GPUBufferCreateInfo) {
@@ -360,7 +365,7 @@ static void sc_gui_free(ScGui* gui, SDL_GPUDevice* device) {
     SDL_ReleaseGPUGraphicsPipeline(device, gui->pipeline);
     SDL_ReleaseGPUTexture(device, gui->font_texture);
     SDL_ReleaseGPUSampler(device, gui->font_sampler);
-    for (uint32_t i = 0; i < 2; i++) {
+    for (uint32_t i = 0; i < SC_INFLIGHT_FRAME_COUNT; i++) {
         SDL_ReleaseGPUBuffer(device, gui->vertex_buffers[i]);
         SDL_ReleaseGPUBuffer(device, gui->index_buffers[i]);
         SDL_ReleaseGPUTransferBuffer(device, gui->transfer_buffers[i]);
@@ -596,12 +601,7 @@ static void sc_gui_frame_begin(ScGui* gui) {
     ImGui_NewFrame();
 }
 
-static void sc_gui_frame_end(
-    ScGui* gui,
-    SDL_GPUDevice* device,
-    SDL_GPUCommandBuffer* command_buffer,
-    SDL_GPURenderPass* render_pass
-) {
+static void sc_gui_frame_end(ScGui* gui, const ScGuiRenderInfo* render_info) {
     // Generate draw data.
     ImGui_Render();
 
@@ -619,10 +619,16 @@ static void sc_gui_frame_end(
         return;
     }
 
+    // Unpack.
+    SDL_GPUDevice* device = render_info->device;
+    SDL_GPUCommandBuffer* command_buffer = render_info->command_buffer;
+    SDL_GPURenderPass* render_pass = render_info->render_pass;
+    const uint32_t frame_index = render_info->frame_index;
+
     // Select buffers.
-    SDL_GPUBuffer* vertex_buffer = gui->vertex_buffers[gui->frame_index];
-    SDL_GPUBuffer* index_buffer = gui->index_buffers[gui->frame_index];
-    SDL_GPUTransferBuffer* transfer_buffer = gui->transfer_buffers[gui->frame_index];
+    SDL_GPUBuffer* vertex_buffer = gui->vertex_buffers[frame_index];
+    SDL_GPUBuffer* index_buffer = gui->index_buffers[frame_index];
+    SDL_GPUTransferBuffer* transfer_buffer = gui->transfer_buffers[frame_index];
 
     // Copy to device.
     const uint32_t vertex_byte_count = vertex_count * sizeof(ScGuiVertex);
@@ -756,7 +762,4 @@ static void sc_gui_frame_end(
         global_vertex_offset += cmd_list->VtxBuffer.Size;
         global_index_offset += cmd_list->IdxBuffer.Size;
     }
-
-    // Update.
-    gui->frame_index = (gui->frame_index + 1) % 2;
 }

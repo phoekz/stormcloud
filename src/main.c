@@ -22,14 +22,21 @@
 #define SC_SWAPCHAIN_COLOR_FORMAT SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB
 #define SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT SDL_GPU_TEXTUREFORMAT_D32_FLOAT
 
+typedef enum ScAppCamera {
+    CAMERA_MAIN,
+    CAMERA_AERIAL,
+    CAMERA_COUNT,
+} ScAppCamera;
+
 typedef struct ScAppParameters {
     float lod_bias;
+    bool debug_visualize_traversal;
 } ScAppParameters;
 
 typedef struct ScApp {
     ScAppParameters parameters;
     ScOctree octree;
-    ScDebugDraw ddraw;
+    ScDebugDraw ddraw[CAMERA_COUNT];
     ScGui gui;
 
     SDL_Window* window;
@@ -44,6 +51,8 @@ typedef struct ScApp {
 
     SDL_GPUGraphicsPipeline* point_pipeline;
     SDL_GPUGraphicsPipeline* bounds_pipeline;
+
+    uint32_t frame_index;
 } ScApp;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
@@ -56,6 +65,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     // Parameters.
     app->parameters.lod_bias = 1.0f / 8.0f;
+    app->parameters.debug_visualize_traversal = false;
 
     // Octree.
     sc_octree_new(&app->octree, argv[1]);
@@ -126,14 +136,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     }
 
     // Debug draw.
-    sc_ddraw_new(
-        &app->ddraw,
-        app->device,
-        &(ScDebugDrawCreateInfo) {
-            .color_format = SC_SWAPCHAIN_COLOR_FORMAT,
-            .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
-        }
-    );
+    for (uint32_t i = 0; i < CAMERA_COUNT; i++) {
+        sc_ddraw_new(
+            &app->ddraw[i],
+            app->device,
+            &(ScDebugDrawCreateInfo) {
+                .color_format = SC_SWAPCHAIN_COLOR_FORMAT,
+                .depth_stencil_format = SC_SWAPCHAIN_DEPTH_STENCIL_FORMAT,
+            }
+        );
+    }
 
     // Vertex buffer - points.
     {
@@ -539,6 +551,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         }
     );
 
+    // Frame index.
+    app->frame_index = 0;
+
     return SDL_APP_CONTINUE;
 }
 
@@ -617,110 +632,291 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     );
 
-    // Cameras.
-    enum {
-        MAIN,
-        AERIAL,
-        COUNT,
+    // Common rendering parameters.
+    const float time = (float)(SDL_GetTicks() / 1000.0);
+    const float screen_width = (float)SC_WINDOW_WIDTH;
+    const float screen_height = (float)SC_WINDOW_HEIGHT;
+    const float field_of_view = rad_from_deg(60.0f);
+    const float clip_distance_near = 16.0f;
+    const float clip_distance_far = 2048.0f;
+    const vec3f world_origin = box3f_center(app->octree.point_bounds);
+    const float main_camera_turn_speed = 0.25f;
+    const float main_camera_offset_radius =
+        64.0f + 1000.0f * (0.5f + 0.5f * cosf(33.333f + 0.5f * time));
+    const vec3f main_camera_offset = (vec3f) {
+        main_camera_offset_radius * cosf(main_camera_turn_speed * time),
+        main_camera_offset_radius * sinf(main_camera_turn_speed * time),
+        main_camera_offset_radius * 0.5f,
     };
-    ScPerspectiveCamera cameras[COUNT];
-    SDL_GPUViewport viewports[COUNT];
-    {
+    const vec3f main_camera_position = vec3f_add(world_origin, main_camera_offset);
+    const vec3f main_camera_target = world_origin;
+    const vec3f main_camera_up = (vec3f) {0.0f, 0.0f, 1.0f};
+
+    // Cameras.
+    if (app->parameters.debug_visualize_traversal) {
+        // Unpack.
+        ScDebugDraw* main_ddraw = &app->ddraw[CAMERA_MAIN];
+        ScDebugDraw* aerial_ddraw = &app->ddraw[CAMERA_AERIAL];
+
         // Common.
-        const float time = (float)(SDL_GetTicks() / 1000.0);
-        const float screen_width = (float)(SC_WINDOW_WIDTH / 2);
-        const float screen_height = (float)SC_WINDOW_HEIGHT;
-        float field_of_view = rad_from_deg(60.0f);
-        const float clip_distance_near = 16.0f;
-        const float clip_distance_far = 2048.0f;
-        const vec3f world_origin = box3f_center(app->octree.point_bounds);
+        const float half_screen_width = 0.5f * screen_width;
+        ScPerspectiveCamera cameras[CAMERA_COUNT];
+        SDL_GPUViewport viewports[CAMERA_COUNT];
+        ScOctreeUniforms uniforms[CAMERA_COUNT];
 
         // Main.
-        {
-            const float camera_turn_speed = 0.25f;
-            const float camera_offset_radius =
-                64.0f + 1000.0f * (0.5f + 0.5f * cosf(33.333f + 0.5f * time));
-            const vec3f camera_offset = (vec3f) {
-                camera_offset_radius * cosf(camera_turn_speed * time),
-                camera_offset_radius * sinf(camera_turn_speed * time),
-                camera_offset_radius * 0.5f,
-            };
-            const vec3f camera_position = vec3f_add(world_origin, camera_offset);
-            const vec3f camera_target = world_origin;
-            const vec3f camera_up = (vec3f) {0.0f, 0.0f, 1.0f};
-            cameras[MAIN] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
-                .screen_width = screen_width,
-                .screen_height = screen_height,
-                .field_of_view = field_of_view,
-                .clip_distance_near = clip_distance_near,
-                .clip_distance_far = clip_distance_far,
-                .world_position = camera_position,
-                .world_target = camera_target,
-                .world_up = camera_up,
-            });
-            viewports[MAIN] = (SDL_GPUViewport) {
-                .x = 0.0f,
-                .y = 0.0f,
-                .w = screen_width,
-                .h = screen_height,
-                .min_depth = 0.0f,
-                .max_depth = 1.0f,
-            };
-
-            // clang-format off
-            const ScFrustum* frustum = &cameras[MAIN].frustum;
-            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_right, 50.0f)), 0xff0000ff);
-            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_up, 50.0f)), 0xff00ff00);
-            sc_ddraw_line(&app->ddraw, camera_position, vec3f_add(camera_position, vec3f_scale(cameras[MAIN].world_forward, 50.0f)), 0xffff0000);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_LBF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBN], frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTN], frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RTN], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_RBN], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTN], frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBN], frustum->corners[SC_FRUSTUM_CORNER_LTN], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBN], frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBF], frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LTF], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_LBF], frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
-            sc_ddraw_line(&app->ddraw, frustum->corners[SC_FRUSTUM_CORNER_RBF], frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
-            // clang-format on
-        }
+        cameras[CAMERA_MAIN] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
+            .screen_width = half_screen_width,
+            .screen_height = screen_height,
+            .field_of_view = field_of_view,
+            .clip_distance_near = clip_distance_near,
+            .clip_distance_far = clip_distance_far,
+            .world_position = main_camera_position,
+            .world_target = main_camera_target,
+            .world_up = main_camera_up,
+        });
+        viewports[CAMERA_MAIN] = (SDL_GPUViewport) {
+            .x = 0.0f,
+            .y = 0.0f,
+            .w = half_screen_width,
+            .h = screen_height,
+            .min_depth = 0.0f,
+            .max_depth = 1.0f,
+        };
+        uniforms[CAMERA_MAIN] = (ScOctreeUniforms) {
+            .clip_from_world = cameras[CAMERA_MAIN].clip_from_world,
+            .node_world_scale = app->octree.node_world_scale,
+        };
+        sc_ddraw_box(main_ddraw, app->octree.point_bounds, 0xffffffff);
 
         // Aerial.
+        const vec3f aerial_camera_position = (vec3f) {0.0f, 0.0f, 2000.0f};
+        const vec3f aerial_camera_target = world_origin;
+        const vec3f aerial_camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
+        cameras[CAMERA_AERIAL] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
+            .screen_width = half_screen_width,
+            .screen_height = screen_height,
+            .field_of_view = field_of_view,
+            .clip_distance_near = clip_distance_near,
+            .clip_distance_far = clip_distance_far,
+            .world_position = aerial_camera_position,
+            .world_target = aerial_camera_target,
+            .world_up = aerial_camera_up,
+        });
+        viewports[CAMERA_AERIAL] = (SDL_GPUViewport) {
+            .x = half_screen_width,
+            .y = 0.0f,
+            .w = half_screen_width,
+            .h = screen_height,
+            .min_depth = 0.0f,
+            .max_depth = 1.0f,
+        };
+        uniforms[CAMERA_AERIAL] = (ScOctreeUniforms) {
+            .clip_from_world = cameras[CAMERA_AERIAL].clip_from_world,
+            .node_world_scale = app->octree.node_world_scale,
+        };
+        // clang-format off
+        const ScFrustum* main_frustum = &cameras[CAMERA_MAIN].frustum;
+        sc_ddraw_line(aerial_ddraw, main_camera_position, vec3f_add(main_camera_position, vec3f_scale(cameras[CAMERA_MAIN].world_right, 50.0f)), 0xff0000ff);
+        sc_ddraw_line(aerial_ddraw, main_camera_position, vec3f_add(main_camera_position, vec3f_scale(cameras[CAMERA_MAIN].world_up, 50.0f)), 0xff00ff00);
+        sc_ddraw_line(aerial_ddraw, main_camera_position, vec3f_add(main_camera_position, vec3f_scale(cameras[CAMERA_MAIN].world_forward, 50.0f)), 0xffff0000);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LBN], main_frustum->corners[SC_FRUSTUM_CORNER_LBF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_RBN], main_frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LTN], main_frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_RTN], main_frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LBN], main_frustum->corners[SC_FRUSTUM_CORNER_RBN], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LTN], main_frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LBN], main_frustum->corners[SC_FRUSTUM_CORNER_LTN], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_RBN], main_frustum->corners[SC_FRUSTUM_CORNER_RTN], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LBF], main_frustum->corners[SC_FRUSTUM_CORNER_RBF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LTF], main_frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_LBF], main_frustum->corners[SC_FRUSTUM_CORNER_LTF], 0xff808080);
+        sc_ddraw_line(aerial_ddraw, main_frustum->corners[SC_FRUSTUM_CORNER_RBF], main_frustum->corners[SC_FRUSTUM_CORNER_RTF], 0xff808080);
+        // clang-format on
+
+        // Traverse.
+        sc_octree_traverse(
+            &app->octree,
+            &(ScOctreeTraverseInfo) {
+                .camera = &cameras[CAMERA_MAIN],
+                .lod_bias = app->parameters.lod_bias,
+            }
+        );
+
+        // Draw - points.
         {
-            const vec3f camera_position = (vec3f) {0.0f, 0.0f, 2000.0f};
-            const vec3f camera_target = world_origin;
-            const vec3f camera_up = (vec3f) {0.0f, 1.0f, 0.0f};
-            cameras[AERIAL] = sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
+            SDL_BindGPUGraphicsPipeline(render_pass, app->point_pipeline);
+            SDL_BindGPUVertexBuffers(
+                render_pass,
+                0,
+                (SDL_GPUBufferBinding[]) {
+                    {
+                        .buffer = app->point_buffer,
+                        .offset = 0,
+                    },
+                    {
+                        .buffer = app->node_buffer,
+                        .offset = 0,
+                    },
+                },
+                2
+            );
+
+            for (uint32_t camera_idx = 0; camera_idx < CAMERA_COUNT; camera_idx++) {
+                SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
+                SDL_PushGPUVertexUniformData(
+                    cmd,
+                    0,
+                    &uniforms[camera_idx],
+                    sizeof(ScOctreeUniforms)
+                );
+                for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+                    const uint32_t node_idx = app->octree.node_traverse[i];
+                    const ScOctreeNode* node = &app->octree.nodes[node_idx];
+                    const uint32_t vertex_count = (uint32_t)node->point_count;
+                    const uint32_t vertex_offset = (uint32_t)node->point_offset;
+                    SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
+                }
+            }
+        }
+
+        // Draw - bounds.
+        {
+            SDL_BindGPUGraphicsPipeline(render_pass, app->bounds_pipeline);
+            SDL_BindGPUVertexBuffers(
+                render_pass,
+                0,
+                (SDL_GPUBufferBinding[]) {
+                    {
+                        .buffer = app->bounds_buffer,
+                        .offset = 0,
+                    },
+                    {
+                        .buffer = app->node_buffer,
+                        .offset = 0,
+                    },
+                },
+                2
+            );
+
+            for (uint32_t camera_idx = 0; camera_idx < CAMERA_COUNT; camera_idx++) {
+                if (camera_idx != CAMERA_AERIAL) {
+                    continue;
+                }
+                SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
+                SDL_PushGPUVertexUniformData(
+                    cmd,
+                    0,
+                    &uniforms[camera_idx],
+                    sizeof(ScOctreeUniforms)
+                );
+                for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+                    const uint32_t node_idx = app->octree.node_traverse[i];
+                    SDL_DrawGPUPrimitives(render_pass, app->bounds_vertex_count, 1, 0, node_idx);
+                }
+            }
+        }
+
+        // Draw - debug.
+        sc_ddraw_render(
+            main_ddraw,
+            &(ScDebugRenderInfo) {
+                .device = app->device,
+                .command_buffer = cmd,
+                .render_pass = render_pass,
+                .viewport = viewports[CAMERA_MAIN],
+                .clip_from_world = cameras[CAMERA_MAIN].clip_from_world,
+                .frame_index = app->frame_index,
+            }
+        );
+        sc_ddraw_render(
+            aerial_ddraw,
+            &(ScDebugRenderInfo) {
+                .device = app->device,
+                .command_buffer = cmd,
+                .render_pass = render_pass,
+                .viewport = viewports[CAMERA_AERIAL],
+                .clip_from_world = cameras[CAMERA_AERIAL].clip_from_world,
+                .frame_index = app->frame_index,
+            }
+        );
+    } else {
+        // Camera.
+        const ScPerspectiveCamera camera =
+            sc_perspective_camera_create(&(ScPerspectiveCameraCreateInfo) {
                 .screen_width = screen_width,
                 .screen_height = screen_height,
                 .field_of_view = field_of_view,
                 .clip_distance_near = clip_distance_near,
                 .clip_distance_far = clip_distance_far,
-                .world_position = camera_position,
-                .world_target = camera_target,
-                .world_up = camera_up,
+                .world_position = main_camera_position,
+                .world_target = main_camera_target,
+                .world_up = main_camera_up,
             });
-            viewports[AERIAL] = (SDL_GPUViewport) {
-                .x = screen_width,
-                .y = 0.0f,
-                .w = screen_width,
-                .h = screen_height,
-                .min_depth = 0.0f,
-                .max_depth = 1.0f,
-            };
-        }
-    }
+        const SDL_GPUViewport viewport = (SDL_GPUViewport) {
+            .x = 0.0f,
+            .y = 0.0f,
+            .w = screen_width,
+            .h = screen_height,
+            .min_depth = 0.0f,
+            .max_depth = 1.0f,
+        };
+        const ScOctreeUniforms uniforms = (ScOctreeUniforms) {
+            .clip_from_world = camera.clip_from_world,
+            .node_world_scale = app->octree.node_world_scale,
+        };
 
-    // Traverse.
-    sc_octree_traverse(
-        &app->octree,
-        &(ScOctreeTraverseInfo) {
-            .camera = &cameras[MAIN],
-            .lod_bias = app->parameters.lod_bias,
+        // Traverse.
+        sc_octree_traverse(
+            &app->octree,
+            &(ScOctreeTraverseInfo) {
+                .camera = &camera,
+                .lod_bias = app->parameters.lod_bias,
+            }
+        );
+
+        // Draw - points.
+        SDL_SetGPUViewport(render_pass, &viewport);
+        SDL_BindGPUGraphicsPipeline(render_pass, app->point_pipeline);
+        SDL_BindGPUVertexBuffers(
+            render_pass,
+            0,
+            (SDL_GPUBufferBinding[]) {
+                {
+                    .buffer = app->point_buffer,
+                    .offset = 0,
+                },
+                {
+                    .buffer = app->node_buffer,
+                    .offset = 0,
+                },
+            },
+            2
+        );
+        SDL_PushGPUVertexUniformData(cmd, 0, &uniforms, sizeof(uniforms));
+        for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
+            const uint32_t node_idx = app->octree.node_traverse[i];
+            const ScOctreeNode* node = &app->octree.nodes[node_idx];
+            const uint32_t vertex_count = (uint32_t)node->point_count;
+            const uint32_t vertex_offset = (uint32_t)node->point_offset;
+            SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
         }
-    );
+
+        // Draw - debug.
+        ScDebugDraw* ddraw = &app->ddraw[CAMERA_MAIN];
+        sc_ddraw_box(ddraw, app->octree.point_bounds, 0xffffffff);
+        sc_ddraw_render(
+            ddraw,
+            &(ScDebugRenderInfo) {
+                .device = app->device,
+                .command_buffer = cmd,
+                .render_pass = render_pass,
+                .viewport = viewport,
+                .clip_from_world = camera.clip_from_world,
+                .frame_index = app->frame_index,
+            }
+        );
+    }
 
     // Gui.
     {
@@ -739,105 +935,29 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         ImGui_Text("traversed_nodes: %u", app->octree.node_traverse_count);
         ImGui_Text("visible_points: %u (%.2fM)", visible_point_count, visible_mpoint_count);
         ImGui_SliderFloat("lod_bias", &app->parameters.lod_bias, 0.0f, 1.0f);
+        ImGui_Checkbox("debug_visualize_traversal", &app->parameters.debug_visualize_traversal);
         ImGui_End();
     }
 
-    // Uniforms.
-    const ScOctreeUniforms uniforms[COUNT] = {
-        {
-            .clip_from_world = cameras[MAIN].clip_from_world,
-            .node_world_scale = app->octree.node_world_scale,
-        },
-        {
-            .clip_from_world = cameras[AERIAL].clip_from_world,
-            .node_world_scale = app->octree.node_world_scale,
-        },
-    };
-
-    // Draw - points.
-    {
-        SDL_BindGPUGraphicsPipeline(render_pass, app->point_pipeline);
-        SDL_BindGPUVertexBuffers(
-            render_pass,
-            0,
-            (SDL_GPUBufferBinding[]) {
-                {
-                    .buffer = app->point_buffer,
-                    .offset = 0,
-                },
-                {
-                    .buffer = app->node_buffer,
-                    .offset = 0,
-                },
-            },
-            2
-        );
-
-        for (uint32_t camera_idx = 0; camera_idx < COUNT; camera_idx++) {
-            SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
-            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms[camera_idx], sizeof(ScOctreeUniforms));
-            for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
-                const uint32_t node_idx = app->octree.node_traverse[i];
-                const ScOctreeNode* node = &app->octree.nodes[node_idx];
-                const uint32_t vertex_count = (uint32_t)node->point_count;
-                const uint32_t vertex_offset = (uint32_t)node->point_offset;
-                SDL_DrawGPUPrimitives(render_pass, vertex_count, 1, vertex_offset, node_idx);
-            }
-        }
-    }
-
-    // Draw - lines.
-    {
-        SDL_BindGPUGraphicsPipeline(render_pass, app->bounds_pipeline);
-        SDL_BindGPUVertexBuffers(
-            render_pass,
-            0,
-            (SDL_GPUBufferBinding[]) {
-                {
-                    .buffer = app->bounds_buffer,
-                    .offset = 0,
-                },
-                {
-                    .buffer = app->node_buffer,
-                    .offset = 0,
-                },
-            },
-            2
-        );
-
-        for (uint32_t camera_idx = 0; camera_idx < COUNT; camera_idx++) {
-            if (camera_idx != AERIAL) {
-                continue;
-            }
-            SDL_SetGPUViewport(render_pass, &viewports[camera_idx]);
-            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms[camera_idx], sizeof(ScOctreeUniforms));
-            for (uint32_t i = 0; i < app->octree.node_traverse_count; i++) {
-                const uint32_t node_idx = app->octree.node_traverse[i];
-                SDL_DrawGPUPrimitives(render_pass, app->bounds_vertex_count, 1, 0, node_idx);
-            }
-        }
-    }
-
-    // Draw - debug.
-    sc_ddraw_render(
-        &app->ddraw,
-        &(ScDebugRenderInfo) {
+    // Gui - end.
+    sc_gui_frame_end(
+        &app->gui,
+        &(ScGuiRenderInfo) {
             .device = app->device,
             .command_buffer = cmd,
             .render_pass = render_pass,
-            .viewport = viewports[AERIAL],
-            .clip_from_world = cameras[AERIAL].clip_from_world,
+            .frame_index = app->frame_index,
         }
     );
-
-    // Gui - end.
-    sc_gui_frame_end(&app->gui, app->device, cmd, render_pass);
 
     // Render pass - end.
     SDL_EndGPURenderPass(render_pass);
 
     // Submit.
     SDL_SubmitGPUCommandBuffer(cmd);
+
+    // Frame index.
+    app->frame_index = (app->frame_index + 1) % SC_INFLIGHT_FRAME_COUNT;
 
     return SDL_APP_CONTINUE;
 }
@@ -852,7 +972,9 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(app->device, app->point_buffer);
     SDL_ReleaseGPUBuffer(app->device, app->bounds_buffer);
     SDL_ReleaseGPUTexture(app->device, app->depth_stencil_texture);
-    sc_ddraw_free(&app->ddraw, app->device);
+    for (uint32_t i = 0; i < CAMERA_COUNT; i++) {
+        sc_ddraw_free(&app->ddraw[i], app->device);
+    }
     sc_gui_free(&app->gui, app->device);
     SDL_ReleaseWindowFromGPUDevice(app->device, app->window);
     SDL_DestroyWindow(app->window);

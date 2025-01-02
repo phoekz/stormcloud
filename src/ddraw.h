@@ -14,6 +14,7 @@ typedef struct ScDebugRenderInfo {
     SDL_GPURenderPass* render_pass;
     SDL_GPUViewport viewport;
     mat4f clip_from_world;
+    uint32_t frame_index;
 } ScDebugRenderInfo;
 
 typedef struct ScDebugDraw {
@@ -22,8 +23,8 @@ typedef struct ScDebugDraw {
     uint32_t line_byte_count;
     ScDebugDrawVertex* lines;
 
-    SDL_GPUTransferBuffer* line_transfer_buffer;
-    SDL_GPUBuffer* line_buffer;
+    SDL_GPUTransferBuffer* line_transfer_buffers[SC_INFLIGHT_FRAME_COUNT];
+    SDL_GPUBuffer* line_buffers[SC_INFLIGHT_FRAME_COUNT];
 
     SDL_GPUGraphicsPipeline* line_pipeline;
 } ScDebugDraw;
@@ -35,20 +36,22 @@ sc_ddraw_new(ScDebugDraw* ddraw, SDL_GPUDevice* device, const ScDebugDrawCreateI
     ddraw->line_capacity = 1024;
     ddraw->line_byte_count = ddraw->line_capacity * sizeof(ScDebugDrawVertex);
     ddraw->lines = malloc(ddraw->line_byte_count);
-    ddraw->line_transfer_buffer = SDL_CreateGPUTransferBuffer(
-        device,
-        &(SDL_GPUTransferBufferCreateInfo) {
-            .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = ddraw->line_byte_count,
-        }
-    );
-    ddraw->line_buffer = SDL_CreateGPUBuffer(
-        device,
-        &(SDL_GPUBufferCreateInfo) {
-            .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-            .size = ddraw->line_byte_count,
-        }
-    );
+    for (uint32_t i = 0; i < SC_INFLIGHT_FRAME_COUNT; i++) {
+        ddraw->line_transfer_buffers[i] = SDL_CreateGPUTransferBuffer(
+            device,
+            &(SDL_GPUTransferBufferCreateInfo) {
+                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+                .size = ddraw->line_byte_count,
+            }
+        );
+        ddraw->line_buffers[i] = SDL_CreateGPUBuffer(
+            device,
+            &(SDL_GPUBufferCreateInfo) {
+                .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+                .size = ddraw->line_byte_count,
+            }
+        );
+    }
 
     // Shaders.
     SDL_GPUShader* vertex_shader = sc_gpu_shader_new(
@@ -155,8 +158,10 @@ sc_ddraw_new(ScDebugDraw* ddraw, SDL_GPUDevice* device, const ScDebugDrawCreateI
 
 static void sc_ddraw_free(ScDebugDraw* ddraw, SDL_GPUDevice* device) {
     SDL_ReleaseGPUGraphicsPipeline(device, ddraw->line_pipeline);
-    SDL_ReleaseGPUBuffer(device, ddraw->line_buffer);
-    SDL_ReleaseGPUTransferBuffer(device, ddraw->line_transfer_buffer);
+    for (uint32_t i = 0; i < SC_INFLIGHT_FRAME_COUNT; i++) {
+        SDL_ReleaseGPUBuffer(device, ddraw->line_buffers[i]);
+        SDL_ReleaseGPUTransferBuffer(device, ddraw->line_transfer_buffers[i]);
+    }
     free(ddraw->lines);
 }
 
@@ -171,6 +176,53 @@ static void sc_ddraw_line(ScDebugDraw* ddraw, vec3f a, vec3f b, uint32_t color) 
     ddraw->line_count += 2;
 }
 
+static void sc_ddraw_box(ScDebugDraw* ddraw, box3f box, uint32_t color) {
+    // Validation.
+    SC_ASSERT(ddraw->line_count + 24 <= ddraw->line_capacity);
+
+    // Corners.
+    const vec3f c[8] = {
+        {box.mn.x, box.mn.y, box.mn.z},
+        {box.mx.x, box.mn.y, box.mn.z},
+        {box.mn.x, box.mx.y, box.mn.z},
+        {box.mx.x, box.mx.y, box.mn.z},
+        {box.mn.x, box.mn.y, box.mx.z},
+        {box.mx.x, box.mn.y, box.mx.z},
+        {box.mn.x, box.mx.y, box.mx.z},
+        {box.mx.x, box.mx.y, box.mx.z},
+    };
+
+    // Write.
+    ScDebugDrawVertex* vertices = &ddraw->lines[ddraw->line_count];
+    vertices[0] = (ScDebugDrawVertex) {.position = c[0], .color = color};
+    vertices[1] = (ScDebugDrawVertex) {.position = c[1], .color = color};
+    vertices[2] = (ScDebugDrawVertex) {.position = c[1], .color = color};
+    vertices[3] = (ScDebugDrawVertex) {.position = c[3], .color = color};
+    vertices[4] = (ScDebugDrawVertex) {.position = c[3], .color = color};
+    vertices[5] = (ScDebugDrawVertex) {.position = c[2], .color = color};
+    vertices[6] = (ScDebugDrawVertex) {.position = c[2], .color = color};
+    vertices[7] = (ScDebugDrawVertex) {.position = c[0], .color = color};
+
+    vertices[8] = (ScDebugDrawVertex) {.position = c[4], .color = color};
+    vertices[9] = (ScDebugDrawVertex) {.position = c[5], .color = color};
+    vertices[10] = (ScDebugDrawVertex) {.position = c[5], .color = color};
+    vertices[11] = (ScDebugDrawVertex) {.position = c[7], .color = color};
+    vertices[12] = (ScDebugDrawVertex) {.position = c[7], .color = color};
+    vertices[13] = (ScDebugDrawVertex) {.position = c[6], .color = color};
+    vertices[14] = (ScDebugDrawVertex) {.position = c[6], .color = color};
+    vertices[15] = (ScDebugDrawVertex) {.position = c[4], .color = color};
+
+    vertices[16] = (ScDebugDrawVertex) {.position = c[0], .color = color};
+    vertices[17] = (ScDebugDrawVertex) {.position = c[4], .color = color};
+    vertices[18] = (ScDebugDrawVertex) {.position = c[1], .color = color};
+    vertices[19] = (ScDebugDrawVertex) {.position = c[5], .color = color};
+    vertices[20] = (ScDebugDrawVertex) {.position = c[2], .color = color};
+    vertices[21] = (ScDebugDrawVertex) {.position = c[6], .color = color};
+    vertices[22] = (ScDebugDrawVertex) {.position = c[3], .color = color};
+    vertices[23] = (ScDebugDrawVertex) {.position = c[7], .color = color};
+    ddraw->line_count += 24;
+}
+
 static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) {
     // Early out.
     if (ddraw->line_count == 0) {
@@ -182,12 +234,15 @@ static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) 
     SDL_GPUCommandBuffer* command_buffer = render_info->command_buffer;
     SDL_GPURenderPass* render_pass = render_info->render_pass;
     SDL_GPUViewport viewport = render_info->viewport;
+    const uint32_t frame_index = render_info->frame_index;
+    SDL_GPUTransferBuffer* line_transfer_buffer = ddraw->line_transfer_buffers[frame_index];
+    SDL_GPUBuffer* line_buffer = ddraw->line_buffers[frame_index];
 
     // Copy to device.
     const uint32_t line_byte_count = ddraw->line_count * sizeof(ScDebugDrawVertex);
-    ScDebugDrawVertex* dst = SDL_MapGPUTransferBuffer(device, ddraw->line_transfer_buffer, false);
+    ScDebugDrawVertex* dst = SDL_MapGPUTransferBuffer(device, line_transfer_buffer, false);
     memcpy(dst, ddraw->lines, line_byte_count);
-    SDL_UnmapGPUTransferBuffer(device, ddraw->line_transfer_buffer);
+    SDL_UnmapGPUTransferBuffer(device, line_transfer_buffer);
 
     // Device commands.
     SDL_GPUCommandBuffer* upload_buffer = SDL_AcquireGPUCommandBuffer(device);
@@ -195,11 +250,11 @@ static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) 
     SDL_UploadToGPUBuffer(
         copy_pass,
         &(SDL_GPUTransferBufferLocation) {
-            .transfer_buffer = ddraw->line_transfer_buffer,
+            .transfer_buffer = line_transfer_buffer,
             .offset = 0,
         },
         &(SDL_GPUBufferRegion) {
-            .buffer = ddraw->line_buffer,
+            .buffer = line_buffer,
             .offset = 0,
             .size = line_byte_count,
         },
@@ -215,7 +270,7 @@ static void sc_ddraw_render(ScDebugDraw* ddraw, ScDebugRenderInfo* render_info) 
         0,
         (SDL_GPUBufferBinding[]) {
             {
-                .buffer = ddraw->line_buffer,
+                .buffer = line_buffer,
                 .offset = 0,
             },
         },
