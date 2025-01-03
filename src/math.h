@@ -62,8 +62,27 @@ typedef struct plane3f {
 } plane3f;
 
 //
+// Scalar
+//
+
+static SC_INLINE float lerpf(float a, float b, float t) {
+    return (1.0f - t) * a + t * b;
+}
+
+static SC_INLINE float explerpf(float a, float b, float rate, float dt) {
+    return lerpf(b, a, exp2f(-rate * dt));
+}
+
+//
 // Vector
 //
+
+static SC_INLINE vec2f vec2f_new(float x, float y) {
+    return (vec2f) {
+        x,
+        y,
+    };
+}
 
 static SC_INLINE vec3f vec3f_new(float x, float y, float z) {
     return (vec3f) {
@@ -151,6 +170,34 @@ static SC_INLINE vec3f vec3f_cross(vec3f lhs, vec3f rhs) {
         lhs.y * rhs.z - rhs.y * lhs.z,
         -(lhs.x * rhs.z - rhs.x * lhs.z),
         lhs.x * rhs.y - rhs.x * lhs.y,
+    };
+}
+
+static SC_INLINE float vec3f_component_min(vec3f vec) {
+    return SDL_min(SDL_min(vec.x, vec.y), vec.z);
+}
+
+static SC_INLINE float vec3f_component_max(vec3f vec) {
+    return SDL_max(SDL_max(vec.x, vec.y), vec.z);
+}
+
+static SC_INLINE bool vec3f_isfinite(vec3f vec) {
+    return isfinite(vec.x) && isfinite(vec.y) && isfinite(vec.z);
+}
+
+static SC_INLINE vec3f vec3f_lerp(vec3f a, vec3f b, float t) {
+    return (vec3f) {
+        lerpf(a.x, b.x, t),
+        lerpf(a.y, b.y, t),
+        lerpf(a.z, b.z, t),
+    };
+}
+
+static SC_INLINE vec3f vec3f_explerp(vec3f a, vec3f b, float rate, float dt) {
+    return (vec3f) {
+        explerpf(a.x, b.x, rate, dt),
+        explerpf(a.y, b.y, rate, dt),
+        explerpf(a.z, b.z, rate, dt),
     };
 }
 
