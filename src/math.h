@@ -540,3 +540,43 @@ static SC_INLINE vec4f vec4f_from_plane3f(plane3f plane) {
         plane.d,
     };
 }
+
+//
+// Morton codes
+//
+
+static SC_INLINE uint16_t morton2_encode16(uint8_t x, uint8_t y) {
+    uint32_t res = x | ((uint32_t)y << 16);
+    res = (res | (res << 4)) & 0x0f0f0f0f;
+    res = (res | (res << 2)) & 0x33333333;
+    res = (res | (res << 1)) & 0x55555555;
+    return (uint16_t)(res | (res >> 15));
+}
+
+static SC_INLINE uint32_t morton2_encode32(uint16_t x, uint16_t y) {
+    uint64_t res = x | ((uint64_t)y << 32);
+    res = (res | (res << 8)) & 0x00ff00ff00ff00ff;
+    res = (res | (res << 4)) & 0x0f0f0f0f0f0f0f0f;
+    res = (res | (res << 2)) & 0x3333333333333333;
+    res = (res | (res << 1)) & 0x5555555555555555;
+    return (uint32_t)(res | (res >> 31));
+}
+
+static SC_INLINE void morton2_decode16(uint8_t* x, uint8_t* y, uint16_t mc) {
+    uint32_t res = (mc | ((uint32_t)(mc) << 15)) & 0x55555555;
+    res = (res | (res >> 1)) & 0x33333333;
+    res = (res | (res >> 2)) & 0x0f0f0f0f;
+    res = res | (res >> 4);
+    *x = (uint8_t)(res);
+    *y = (uint8_t)(res >> 16);
+}
+
+static SC_INLINE void morton2_decode32(uint16_t* x, uint16_t* y, uint32_t mc) {
+    uint64_t res = (mc | ((uint64_t)mc << 31)) & 0x5555555555555555;
+    res = (res | (res >> 1)) & 0x3333333333333333;
+    res = (res | (res >> 2)) & 0x0f0f0f0f0f0f0f0f;
+    res = (res | (res >> 4)) & 0x00ff00ff00ff00ff;
+    res = res | (res >> 8);
+    *x = (uint16_t)res;
+    *y = (uint16_t)(res >> 32);
+}

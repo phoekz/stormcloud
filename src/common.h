@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <dcimgui.h>
+#include <stb_image_write.h>
 
 #define SC_UNUSED(x) (void)(x)
 #define SC_ASSERT(expr) \

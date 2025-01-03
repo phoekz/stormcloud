@@ -74,15 +74,49 @@ static void sc_octree_new(ScOctree* octree, const char* file_path) {
     fread(octree->points, 1, octree->point_count * sizeof(ScOctreePoint), file);
 
     // Debug: morton order visualization.
-    const bool debug_morton_order = false;
-    if (debug_morton_order) {
+    const bool debug_morton_order_coloring = false;
+    if (debug_morton_order_coloring) {
         for (uint32_t node_idx = 0; node_idx < octree->node_count; ++node_idx) {
-            ScOctreeNode* node = &octree->nodes[node_idx];
+            const ScOctreeNode* node = &octree->nodes[node_idx];
             for (uint32_t point_idx = 0; point_idx < node->point_count; ++point_idx) {
                 ScOctreePoint* point = &octree->points[node->point_offset + point_idx];
-                float linear_ratio = (float)point_idx / (float)node->point_count;
+                const float linear_ratio = (float)point_idx / (float)node->point_count;
                 point->color = sc_color_from_hsv(linear_ratio, 0.75f, 1.0f);
             }
+        }
+    }
+
+    // Debug: write points as images.
+    const bool debug_write_point_images = false;
+    if (debug_write_point_images) {
+        for (uint32_t node_idx = 0; node_idx < octree->node_count; ++node_idx) {
+            const ScOctreeNode* node = &octree->nodes[node_idx];
+            uint32_t image_size = 1;
+            while (image_size * image_size < node->point_count) {
+                image_size *= 2;
+            }
+            const uint32_t image_width = image_size;
+            const uint32_t image_height = image_size;
+            uint8_t* image_data = malloc(image_width * image_height * 4);
+            for (uint32_t i = 0; i < image_width * image_height; i++) {
+                image_data[4 * i + 0] = 0;
+                image_data[4 * i + 1] = 0;
+                image_data[4 * i + 2] = 0;
+                image_data[4 * i + 3] = 255;
+            }
+            for (uint32_t point_idx = 0; point_idx < node->point_count; ++point_idx) {
+                const ScOctreePoint* point = &octree->points[node->point_offset + point_idx];
+                uint16_t x, y;
+                morton2_decode32(&x, &y, point_idx);
+                image_data[4 * (y * image_width + x) + 0] = (point->color >> 0) & 0xff;
+                image_data[4 * (y * image_width + x) + 1] = (point->color >> 8) & 0xff;
+                image_data[4 * (y * image_width + x) + 2] = (point->color >> 16) & 0xff;
+                image_data[4 * (y * image_width + x) + 3] = 255;
+            }
+            char image_name[64];
+            snprintf(image_name, sizeof(image_name), "temp/node_%d_%d.png", node->level, node_idx);
+            stbi_write_png(image_name, image_width, image_height, 4, image_data, image_width * 4);
+            free(image_data);
         }
     }
 

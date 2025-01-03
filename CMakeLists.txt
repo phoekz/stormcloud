@@ -14,10 +14,11 @@ project(stormcloud)
 # Declare.
 include(FetchContent)
 FetchContent_Declare(zstd GIT_REPOSITORY "https://github.com/facebook/zstd.git" GIT_TAG 794ea1b0afca0f020f4e57b6732332231fb23c70 SOURCE_SUBDIR build/cmake) # v1.5.6
-FetchContent_Declare(sdl3 URL https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-devel-3.1.6-VC.zip) # v3.1.6
+FetchContent_Declare(sdl3 URL "https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-devel-3.1.6-VC.zip") # v3.1.6
 FetchContent_Declare(dxc URL "https://globalcdn.nuget.org/packages/microsoft.direct3d.dxc.1.8.2407.12.nupkg") # v1.8.2407.12
 FetchContent_Declare(dear_bindings GIT_REPOSITORY "https://github.com/dearimgui/dear_bindings.git" GIT_TAG 139b5b88b49946b817b7f9737d88c5c01b0ce1c8) # Dec 9, 2024
 FetchContent_Declare(dear_imgui GIT_REPOSITORY "https://github.com/ocornut/imgui.git" GIT_TAG v1.91.6) # v1.91.6
+FetchContent_Declare(stb GIT_REPOSITORY "https://github.com/nothings/stb.git" GIT_TAG 5c205738c191bcb0abc65c4febfa9bd25ff35234) # Nov 9, 2024
 
 # zstd.
 set(ZSTD_BUILD_TESTS OFF)
@@ -83,6 +84,13 @@ target_include_directories(dear_imgui
     PRIVATE ${DEAR_IMGUI_SOURCE_DIR}
 )
 
+# stb.
+FetchContent_MakeAvailable(stb)
+set(STB_SOURCE_DIR ${FETCHCONTENT_BASE_DIR}/stb-src)
+configure_file(cmake/stb.c.in ${STB_SOURCE_DIR}/stb.c COPYONLY)
+add_library(stb STATIC ${STB_SOURCE_DIR}/stb.c)
+target_include_directories(stb PUBLIC ${STB_SOURCE_DIR})
+
 #
 # Shaders
 #
@@ -133,7 +141,7 @@ target_compile_options(stormcloud PRIVATE
     $<$<CONFIG:RELWITHDEBINFO>:/Ot>
     $<$<CONFIG:RELWITHDEBINFO>:/Ob3>
 )
-target_link_libraries(stormcloud PRIVATE libzstd_static ${SDL3_SOURCE_DIR}/lib/x64/SDL3.lib dear_imgui)
+target_link_libraries(stormcloud PRIVATE libzstd_static ${SDL3_SOURCE_DIR}/lib/x64/SDL3.lib dear_imgui stb)
 target_include_directories(stormcloud PRIVATE ${SDL3_SOURCE_DIR}/include)
 set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_target_properties(stormcloud PROPERTIES VS_DEBUGGER_COMMAND_ARGUMENTS "temp/tokyo.oct")
